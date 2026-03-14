@@ -1,0 +1,17 @@
+# Build
+bin/
+obj/
+*.user
+.vs/
+.vscode/
+
+# Secretos — NUNCA subir a git
+.env
+appsettings.Development.json
+appsettings.Production.json
+*.pfx
+*.key
+
+# Google OAuth2 — credenciales y token
+google_credentials.json
+google_token.json
