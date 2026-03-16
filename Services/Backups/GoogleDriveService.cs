@@ -97,17 +97,28 @@ public class GoogleDriveService
     }
 
     // ── Crear cliente OAuth2 ──────────────────────────────────────
+    // Las credenciales se leen desde variables de entorno — no se necesita el archivo JSON
     private static async Task<DriveService> CrearDriveServiceAsync()
     {
-        var credPath  = Env("GOOGLE_CREDENTIALS_PATH");
         var tokenPath = Env("GOOGLE_TOKEN_PATH");
 
-        if (!File.Exists(credPath))
-            throw new FileNotFoundException(
-                $"No se encontró google_credentials.json en: {Path.GetFullPath(credPath)}");
+        // Construir el JSON de credenciales desde variables de entorno
+        var clientId     = Env("GOOGLE_CLIENT_ID");
+        var clientSecret = Env("GOOGLE_CLIENT_SECRET");
+
+        var credJson = $@"{{
+            ""installed"": {{
+                ""client_id"": ""{clientId}"",
+                ""client_secret"": ""{clientSecret}"",
+                ""auth_uri"": ""https://accounts.google.com/o/oauth2/auth"",
+                ""token_uri"": ""https://oauth2.googleapis.com/token"",
+                ""auth_provider_x509_cert_url"": ""https://www.googleapis.com/oauth2/v1/certs"",
+                ""redirect_uris"": [""http://localhost""]
+            }}
+        }}";
 
         UserCredential credential;
-        await using (var stream = new FileStream(credPath, FileMode.Open, FileAccess.Read))
+        await using (var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(credJson)))
         {
             var tokenDir = Path.GetDirectoryName(Path.GetFullPath(tokenPath)) ?? ".";
             credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
