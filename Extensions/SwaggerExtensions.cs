@@ -46,6 +46,33 @@ public static class SwaggerExtensions
         {
             c.SwaggerEndpoint("/swagger/v1/swagger.json", "Florera Bautista API v1");
             c.RoutePrefix = "swagger";
+
+            // En Development: inyecta el token automáticamente via JS
+            // Llama a /api/dev/token y lo pone en Swagger sin intervención manual
+            c.HeadContent = @"
+<script>
+window.addEventListener('load', function() {
+    setTimeout(async function() {
+        try {
+            const res = await fetch('/api/dev/token');
+            if (!res.ok) return;
+            const token = await res.text();
+            const clean = token.replace(/^""|""$/g, '').trim();
+            if (!clean) return;
+            // Guardar en localStorage de Swagger UI
+            const authKey = 'swagger_' + window.location.origin + '_Bearer';
+            localStorage.setItem(authKey, JSON.stringify({ name: 'Bearer', schema: 'bearer', value: clean }));
+            // Aplicar al cliente de Swagger UI
+            if (window.ui) {
+                window.ui.preauthorizeApiKey('Bearer', clean);
+                console.log('[Dev] Token JWT aplicado automáticamente en Swagger');
+            }
+        } catch(e) {
+            console.warn('[Dev] No se pudo obtener token dev:', e);
+        }
+    }, 1500);
+});
+</script>";
         });
         return app;
     }

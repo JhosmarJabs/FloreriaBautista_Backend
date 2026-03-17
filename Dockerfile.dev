@@ -1,0 +1,18 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY FloreriaBautista.csproj .
+RUN dotnet restore
+
+EXPOSE 5000
+
+ENV ASPNETCORE_URLS=http://+:5000
+ENV ASPNETCORE_ENVIRONMENT=Development
+ENV DOTNET_USE_POLLING_FILE_WATCHER=true
+
+CMD ["dotnet", "watch", "run", "--no-launch-profile"]

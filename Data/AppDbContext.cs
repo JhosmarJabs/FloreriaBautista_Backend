@@ -48,6 +48,7 @@ public class AppDbContext : DbContext
         base.OnModelCreating(modelBuilder);
 
         // Carga todas las IEntityTypeConfiguration<T> — cada entidad tiene su archivo en Configurations/
+        modelBuilder.HasDefaultSchema("public");
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
 
         // Claves compuestas de tablas N:M (no tienen archivo de configuración propio)

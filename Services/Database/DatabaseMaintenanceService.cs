@@ -19,7 +19,7 @@ public class DatabaseMaintenanceService : IDatabaseMaintenanceService
     // Usa conexión Npgsql propia con app_user (que tiene VACUUM ANALYZE)
     public async Task<MaintenanceResponseDto> EjecutarVacuumAsync()
     {
-        var sw = Stopwatch.StartNew();
+        var sw  = Stopwatch.StartNew();
         var dto = new MaintenanceResponseDto { Tarea = "VACUUM ANALYZE", EjecutadoEn = DateTime.UtcNow };
 
         try
@@ -47,16 +47,16 @@ public class DatabaseMaintenanceService : IDatabaseMaintenanceService
             }
 
             sw.Stop();
-            dto.Estado = "COMPLETADO";
-            dto.Detalle = $"VACUUM ANALYZE ejecutado en {tablas.Count} tablas.";
+            dto.Estado     = "COMPLETADO";
+            dto.Detalle    = $"VACUUM ANALYZE ejecutado en {tablas.Count} tablas.";
             dto.DuracionMs = sw.Elapsed.TotalMilliseconds;
         }
         catch (Exception ex)
         {
             sw.Stop();
-            dto.Estado = "ERROR";
+            dto.Estado       = "ERROR";
             dto.MensajeError = ex.Message;
-            dto.DuracionMs = sw.Elapsed.TotalMilliseconds;
+            dto.DuracionMs   = sw.Elapsed.TotalMilliseconds;
             _logger.LogError(ex, "Error en VACUUM ANALYZE");
         }
 
@@ -67,7 +67,7 @@ public class DatabaseMaintenanceService : IDatabaseMaintenanceService
     // Requiere db_admin_user (permisos de owner sobre las tablas)
     public async Task<MaintenanceResponseDto> ReindexarAsync()
     {
-        var sw = Stopwatch.StartNew();
+        var sw  = Stopwatch.StartNew();
         var dto = new MaintenanceResponseDto { Tarea = "REINDEX", EjecutadoEn = DateTime.UtcNow };
 
         try
@@ -94,16 +94,16 @@ public class DatabaseMaintenanceService : IDatabaseMaintenanceService
             }
 
             sw.Stop();
-            dto.Estado = "COMPLETADO";
-            dto.Detalle = $"Reindexado ejecutado en {tablas.Count} tablas.";
+            dto.Estado     = "COMPLETADO";
+            dto.Detalle    = $"Reindexado ejecutado en {tablas.Count} tablas.";
             dto.DuracionMs = sw.Elapsed.TotalMilliseconds;
         }
         catch (Exception ex)
         {
             sw.Stop();
-            dto.Estado = "ERROR";
+            dto.Estado       = "ERROR";
             dto.MensajeError = ex.Message;
-            dto.DuracionMs = sw.Elapsed.TotalMilliseconds;
+            dto.DuracionMs   = sw.Elapsed.TotalMilliseconds;
             _logger.LogError(ex, "Error en REINDEX");
         }
 
@@ -113,8 +113,8 @@ public class DatabaseMaintenanceService : IDatabaseMaintenanceService
     // ── LIMPIEZA DE REGISTROS ANTIGUOS ────────────────────────────
     public async Task<MaintenanceResponseDto> LimpiarRegistrosAntiguosAsync(int diasAntiguedad = 90)
     {
-        var sw = Stopwatch.StartNew();
-        var dto = new MaintenanceResponseDto { Tarea = "LIMPIEZA", EjecutadoEn = DateTime.UtcNow };
+        var sw    = Stopwatch.StartNew();
+        var dto   = new MaintenanceResponseDto { Tarea = "LIMPIEZA", EjecutadoEn = DateTime.UtcNow };
         var corte = DateTime.UtcNow.AddDays(-diasAntiguedad);
         var ahora = DateTime.UtcNow;
 
@@ -138,16 +138,16 @@ public class DatabaseMaintenanceService : IDatabaseMaintenanceService
             dto.Resultados.Add($"✔ auth_tokens: {await Ejecutar("DELETE FROM public.auth_tokens WHERE expira_en < @p", ahora)} eliminados");
 
             sw.Stop();
-            dto.Estado = "COMPLETADO";
-            dto.Detalle = $"Limpieza de registros anteriores a {diasAntiguedad} días completada.";
+            dto.Estado     = "COMPLETADO";
+            dto.Detalle    = $"Limpieza de registros anteriores a {diasAntiguedad} días completada.";
             dto.DuracionMs = sw.Elapsed.TotalMilliseconds;
         }
         catch (Exception ex)
         {
             sw.Stop();
-            dto.Estado = "ERROR";
+            dto.Estado       = "ERROR";
             dto.MensajeError = ex.Message;
-            dto.DuracionMs = sw.Elapsed.TotalMilliseconds;
+            dto.DuracionMs   = sw.Elapsed.TotalMilliseconds;
             _logger.LogError(ex, "Error en limpieza");
         }
 
@@ -157,7 +157,7 @@ public class DatabaseMaintenanceService : IDatabaseMaintenanceService
     // ── ANALYZE ───────────────────────────────────────────────────
     public async Task<MaintenanceResponseDto> ActualizarEstadisticasAsync()
     {
-        var sw = Stopwatch.StartNew();
+        var sw  = Stopwatch.StartNew();
         var dto = new MaintenanceResponseDto { Tarea = "ANALYZE", EjecutadoEn = DateTime.UtcNow };
 
         try
@@ -169,17 +169,17 @@ public class DatabaseMaintenanceService : IDatabaseMaintenanceService
             await cmd.ExecuteNonQueryAsync();
 
             sw.Stop();
-            dto.Estado = "COMPLETADO";
-            dto.Detalle = "Estadísticas del query planner actualizadas correctamente.";
+            dto.Estado     = "COMPLETADO";
+            dto.Detalle    = "Estadísticas del query planner actualizadas correctamente.";
             dto.DuracionMs = sw.Elapsed.TotalMilliseconds;
             dto.Resultados.Add("✔ ANALYZE ejecutado en toda la base de datos");
         }
         catch (Exception ex)
         {
             sw.Stop();
-            dto.Estado = "ERROR";
+            dto.Estado       = "ERROR";
             dto.MensajeError = ex.Message;
-            dto.DuracionMs = sw.Elapsed.TotalMilliseconds;
+            dto.DuracionMs   = sw.Elapsed.TotalMilliseconds;
             _logger.LogError(ex, "Error en ANALYZE");
         }
 

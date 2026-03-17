@@ -51,6 +51,32 @@ public class GoogleDriveService
         return request.ResponseBody.Id;
     }
 
+    // ── Subir desde Stream (sin archivo local) ───────────────────
+    public async Task<string> SubirStreamAsync(Stream stream, string nombreArchivo)
+    {
+        var drive    = await CrearDriveServiceAsync();
+        var folderId = Env("GOOGLE_DRIVE_FOLDER_ID");
+
+        var metadata = new Google.Apis.Drive.v3.Data.File
+        {
+            Name    = nombreArchivo,
+            Parents = [folderId]
+        };
+
+        var request = drive.Files.Create(metadata, stream, "text/plain");
+        request.Fields = "id, name, size, webViewLink";
+
+        var progress = await request.UploadAsync();
+
+        if (progress.Status != Google.Apis.Upload.UploadStatus.Completed)
+            throw new Exception($"Error al subir a Drive: {progress.Exception?.Message}");
+
+        _logger.LogInformation("Stream subido a Drive: {Nombre} | ID: {Id}",
+            request.ResponseBody.Name, request.ResponseBody.Id);
+
+        return request.ResponseBody.Id;
+    }
+
     // ── Descargar archivo ─────────────────────────────────────────
     public async Task<string> DescargarArchivoAsync(string fileId, string carpetaDestino)
     {

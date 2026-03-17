@@ -6,6 +6,9 @@ using FloreriaBautista.Services.Interfaces;
 using FloreriaBautista.Services.Scheduler;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using FloreriaBautista.Services.Auth;
+using FloreriaBautista.Services;
+using FloreriaBautista.Services.ImportExport;
+using FloreriaBautista.Services.Reports;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
@@ -73,6 +76,12 @@ public static class ServiceExtensions
 
         // TODO: Registrar aquí los demás módulos
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IExportService, ExportService>();
+        services.AddScoped<IImportService, ImportService>();
+        services.AddScoped<IProductService, ProductService>();
+        services.AddScoped<IOrderService, OrderService>();
+        services.AddScoped<IInventoryService, InventoryService>();
+        services.AddScoped<ReportsService>();
 
         return services;
     }
@@ -82,7 +91,8 @@ public static class ServiceExtensions
         $"Port={Env("DB_PORT")};" +
         $"Database={Env("DB_NAME")};" +
         $"Username={Env("DB_USER")};" +
-        $"Password={Env("DB_PASSWORD")}";
+        $"Password={Env("DB_PASSWORD")}" +
+        "Search Path=public;Include Error Detail=true";
 
     private static string Env(string key) =>
         Environment.GetEnvironmentVariable(key)

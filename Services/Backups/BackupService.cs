@@ -1,30 +1,26 @@
-using Npgsql;
 using System.Diagnostics;
-using FloreriaBautista.Data;
+using Npgsql;
 using FloreriaBautista.Models.DTOs.Backups;
 using FloreriaBautista.Models.Exceptions;
 using FloreriaBautista.Services.Interfaces;
 
 namespace FloreriaBautista.Services.Backups;
 
+/// <summary>
+/// Genera backups con pg_dump en formato custom (.backup).
+/// Usa /tmp como carpeta temporal — funciona en cualquier SO (Linux, Windows, Docker).
+/// El archivo se sube a Google Drive y se elimina del disco inmediatamente.
+/// </summary>
 public class BackupService : IBackupService
 {
-    private readonly AppDbContext           _context;
-    private readonly IConfiguration         _config;
     private readonly GoogleDriveService     _driveService;
     private readonly ILogger<BackupService> _logger;
 
     private static readonly HashSet<string> TablasExcluidas =
         new(StringComparer.OrdinalIgnoreCase) { "schema_migrations", "__efmigrationshistory" };
 
-    public BackupService(
-        AppDbContext context,
-        IConfiguration config,
-        GoogleDriveService driveService,
-        ILogger<BackupService> logger)
+    public BackupService(GoogleDriveService driveService, ILogger<BackupService> logger)
     {
-        _context      = context;
-        _config       = config;
         _driveService = driveService;
         _logger       = logger;
     }
@@ -32,11 +28,8 @@ public class BackupService : IBackupService
     // ── Tablas disponibles ────────────────────────────────────────
     public async Task<List<string>> ObtenerTablasAsync()
     {
-        // Usar backup_user directamente — evita depender de app_user
-        var connStr = BuildBackupConnectionString();
         var resultado = new List<string>();
-
-        await using var conn = new NpgsqlConnection(connStr);
+        await using var conn = CrearConexion();
         await conn.OpenAsync();
 
         await using var cmd = conn.CreateCommand();
@@ -49,37 +42,35 @@ public class BackupService : IBackupService
         while (await reader.ReadAsync())
             resultado.Add(reader.GetString(0));
 
-        _logger.LogInformation("Tablas encontradas: {Count}", resultado.Count);
         return resultado.Where(t => !TablasExcluidas.Contains(t)).ToList();
     }
 
     // ── Backup FULL ───────────────────────────────────────────────
     public async Task<BackupResponseDto> CrearBackupFullAsync(string? descripcion, Guid usuarioId)
     {
-        var inicio = DateTime.UtcNow;
-        var rutaArchivo = GenerarRutaArchivo("full", null);
+        var inicio  = DateTime.UtcNow;
+        var nombre  = GenerarNombreArchivo("full", null);
+        var tmpPath = Path.Combine(Path.GetTempPath(), nombre);
 
         try
         {
-            await EjecutarPgDumpAsync(rutaArchivo, tabla: null);
-            _logger.LogInformation("Backup FULL generado: {Ruta}", rutaArchivo);
+            await EjecutarPgDumpAsync(tmpPath, tabla: null);
+            _logger.LogInformation("Backup FULL generado en tmp: {Path}", tmpPath);
 
-            var (driveId, driveEnlace) = await SubirADriveAsync(rutaArchivo, Path.GetFileName(rutaArchivo));
-            var info = new FileInfo(rutaArchivo);
+            var (driveId, driveEnlace) = await SubirADriveAsync(tmpPath, nombre);
+            var tamano = new FileInfo(tmpPath).Length;
 
             return new BackupResponseDto
             {
-                Id               = Guid.NewGuid(),
-                Tipo             = "BD",
-                Estado           = "COMPLETADO",
-                CreadoEn         = inicio,
-                CompletadoEn     = DateTime.UtcNow,
-                RutaArchivoLocal = rutaArchivo,
-                TamanoBytes      = info.Exists ? info.Length : null,
-                DriveFileId      = string.IsNullOrEmpty(driveId) ? null : driveId,
-                DriveEnlace      = string.IsNullOrEmpty(driveEnlace) ? null : driveEnlace,
-                SubidoADrive     = !string.IsNullOrEmpty(driveId),
-                MensajeError     = !string.IsNullOrEmpty(driveId) ? null : $"Drive: {driveEnlace}"
+                Id           = Guid.NewGuid(),
+                Tipo         = "BD",
+                Estado       = "COMPLETADO",
+                CreadoEn     = inicio,
+                CompletadoEn = DateTime.UtcNow,
+                TamanoBytes  = tamano,
+                DriveFileId  = driveId,
+                DriveEnlace  = driveEnlace,
+                SubidoADrive = true
             };
         }
         catch (Exception ex)
@@ -95,6 +86,15 @@ public class BackupService : IBackupService
                 MensajeError = ex.Message
             };
         }
+        finally
+        {
+            // Eliminar archivo temporal siempre
+            if (File.Exists(tmpPath))
+            {
+                File.Delete(tmpPath);
+                _logger.LogInformation("Archivo temporal eliminado: {Path}", tmpPath);
+            }
+        }
     }
 
     // ── Backup por tabla ──────────────────────────────────────────
@@ -105,31 +105,30 @@ public class BackupService : IBackupService
         if (!tablas.Contains(nombreTabla, StringComparer.OrdinalIgnoreCase))
             throw new AppException($"La tabla '{nombreTabla}' no existe en la base de datos.");
 
-        var inicio = DateTime.UtcNow;
-        var rutaArchivo = GenerarRutaArchivo("tabla", nombreTabla);
+        var inicio  = DateTime.UtcNow;
+        var nombre  = GenerarNombreArchivo("tabla", nombreTabla);
+        var tmpPath = Path.Combine(Path.GetTempPath(), nombre);
 
         try
         {
-            await EjecutarPgDumpAsync(rutaArchivo, tabla: nombreTabla);
-            _logger.LogInformation("Backup tabla '{Tabla}' generado: {Ruta}", nombreTabla, rutaArchivo);
+            await EjecutarPgDumpAsync(tmpPath, tabla: nombreTabla);
+            _logger.LogInformation("Backup tabla '{Tabla}' generado en tmp: {Path}", nombreTabla, tmpPath);
 
-            var (driveId, driveEnlace) = await SubirADriveAsync(rutaArchivo, Path.GetFileName(rutaArchivo));
-            var info = new FileInfo(rutaArchivo);
+            var (driveId, driveEnlace) = await SubirADriveAsync(tmpPath, nombre);
+            var tamano = new FileInfo(tmpPath).Length;
 
             return new BackupResponseDto
             {
-                Id               = Guid.NewGuid(),
-                Tipo             = "BD_ARCHIVOS",
-                Estado           = "COMPLETADO",
-                NombreTabla      = nombreTabla,
-                CreadoEn         = inicio,
-                CompletadoEn     = DateTime.UtcNow,
-                RutaArchivoLocal = rutaArchivo,
-                TamanoBytes      = info.Exists ? info.Length : null,
-                DriveFileId      = string.IsNullOrEmpty(driveId) ? null : driveId,
-                DriveEnlace      = string.IsNullOrEmpty(driveEnlace) ? null : driveEnlace,
-                SubidoADrive     = !string.IsNullOrEmpty(driveId),
-                MensajeError     = !string.IsNullOrEmpty(driveId) ? null : $"Drive: {driveEnlace}"
+                Id           = Guid.NewGuid(),
+                Tipo         = "BD_ARCHIVOS",
+                Estado       = "COMPLETADO",
+                NombreTabla  = nombreTabla,
+                CreadoEn     = inicio,
+                CompletadoEn = DateTime.UtcNow,
+                TamanoBytes  = tamano,
+                DriveFileId  = driveId,
+                DriveEnlace  = driveEnlace,
+                SubidoADrive = true
             };
         }
         catch (Exception ex)
@@ -146,93 +145,65 @@ public class BackupService : IBackupService
                 MensajeError = ex.Message
             };
         }
+        finally
+        {
+            if (File.Exists(tmpPath))
+            {
+                File.Delete(tmpPath);
+                _logger.LogInformation("Archivo temporal eliminado: {Path}", tmpPath);
+            }
+        }
     }
 
-    // ── Listar backups locales ────────────────────────────────────
+    // ── Listar backups en Drive ───────────────────────────────────
     public async Task<List<BackupResponseDto>> ListarBackupsAsync()
     {
-        var carpeta = Environment.GetEnvironmentVariable("BACKUPS_RUTA_LOCAL") ?? "backups";
-        if (!Directory.Exists(carpeta))
-            return [];
-
-        return await Task.FromResult(
-            Directory.GetFiles(carpeta, "*.backup")
-                .Select(f =>
-                {
-                    var info = new FileInfo(f);
-                    return new BackupResponseDto
-                    {
-                        Id               = Guid.NewGuid(),
-                        Tipo             = info.Name.Contains("_full_") ? "BD" : "BD_ARCHIVOS",
-                        Estado           = "COMPLETADO",
-                        CreadoEn         = info.CreationTimeUtc,
-                        CompletadoEn     = info.CreationTimeUtc,
-                        RutaArchivoLocal = f,
-                        TamanoBytes      = info.Length
-                    };
-                })
-                .OrderByDescending(b => b.CreadoEn)
-                .ToList()
-        );
+        var archivos = await _driveService.ListarArchivosAsync();
+        return archivos.Select(f => new BackupResponseDto
+        {
+            Id           = Guid.NewGuid(),
+            Tipo         = f.Nombre?.Contains("_full_") == true ? "BD" : "BD_ARCHIVOS",
+            Estado       = "COMPLETADO",
+            CreadoEn     = f.CreadoEn ?? DateTime.UtcNow,
+            CompletadoEn = f.CreadoEn ?? DateTime.UtcNow,
+            TamanoBytes  = f.TamanoBytes,
+            DriveFileId  = f.Id,
+            DriveEnlace  = f.Enlace,
+            SubidoADrive = true
+        }).ToList();
     }
 
-    // ── Listar archivos en Drive ──────────────────────────────────
     public async Task<List<DriveFileDto>> ListarArchivosDriveAsync()
         => await _driveService.ListarArchivosAsync();
 
-    // ── Detalle por ID (sin BD, no disponible) ────────────────────
     public Task<BackupResponseDto> ObtenerBackupAsync(Guid id)
         => throw new NotFoundException("BackupJob", id);
 
-    // ── Helpers privados ──────────────────────────────────────────
-
-    private async Task<(string DriveId, string DriveEnlace)> SubirADriveAsync(
-        string rutaArchivo, string nombreArchivo)
-    {
-        try
-        {
-            var driveId = await _driveService.SubirArchivoAsync(rutaArchivo, nombreArchivo);
-            _logger.LogInformation("Backup subido a Google Drive. ID: {Id}", driveId);
-            return (driveId, $"https://drive.google.com/file/d/{driveId}/view");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Drive error: {Msg}", ex.Message);
-            return (string.Empty, ex.Message); // Retorna el error para mostrarlo al cliente
-        }
-    }
-
+    // ── pg_dump ───────────────────────────────────────────────────
     private async Task EjecutarPgDumpAsync(string rutaArchivo, string? tabla)
     {
-        // Credenciales: usa BACKUP_DB_USER/PASSWORD del .env, si no existe usa app_user
-        var host     = Environment.GetEnvironmentVariable("DB_HOST")             ?? "localhost";
-        var port     = Environment.GetEnvironmentVariable("DB_PORT")             ?? "5432";
-        var database = Environment.GetEnvironmentVariable("DB_NAME")             ?? "floreria_bautista";
-        var user     = Environment.GetEnvironmentVariable("BACKUP_DB_USER")      ?? Environment.GetEnvironmentVariable("DB_USER") ?? "app_user";
-        var password = Environment.GetEnvironmentVariable("BACKUP_DB_PASSWORD")  ?? Environment.GetEnvironmentVariable("DB_PASSWORD") ?? "";
+        var host     = Env("DB_HOST");
+        var port     = Env("DB_PORT");
+        var database = Env("DB_NAME");
+        var user     = Environment.GetEnvironmentVariable("BACKUP_DB_USER") ?? Env("DB_USER");
+        var password = Environment.GetEnvironmentVariable("BACKUP_DB_PASSWORD") ?? Env("DB_PASSWORD");
 
-        Directory.CreateDirectory(Path.GetDirectoryName(rutaArchivo)!);
-
-        // Formato custom (-F c) igual que el script .bat — genera .backup
         var args = tabla is null
             ? $"-h {host} -p {port} -U {user} -F c -f \"{rutaArchivo}\" {database}"
-            : $"-h {host} -p {port} -U {user} -F c --table={tabla} -f \"{rutaArchivo}\" {database}";
+            : $"-h {host} -p {port} -U {user} -F c --table=public.{tabla} -f \"{rutaArchivo}\" {database}";
 
         var psi = new ProcessStartInfo
         {
-            FileName               = "pg_dump",
-            Arguments              = args,
-            RedirectStandardError  = true,
-            RedirectStandardOutput = false,
-            UseShellExecute        = false,
-            CreateNoWindow         = true,
+            FileName              = "pg_dump",
+            Arguments             = args,
+            RedirectStandardError = true,
+            UseShellExecute       = false,
+            CreateNoWindow        = true
         };
-
-        // PGPASSWORD evita el prompt interactivo
         psi.Environment["PGPASSWORD"] = password;
 
         using var process = Process.Start(psi)
-            ?? throw new AppException("No se pudo iniciar el proceso pg_dump.");
+            ?? throw new AppException("No se pudo iniciar pg_dump.");
 
         var stderr = await process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
@@ -241,26 +212,38 @@ public class BackupService : IBackupService
             throw new AppException($"pg_dump falló (código {process.ExitCode}): {stderr}");
     }
 
-    private static string GenerarRutaArchivo(string tipo, string? tabla)
+    // ── Subir a Drive ─────────────────────────────────────────────
+    private async Task<(string DriveId, string DriveEnlace)> SubirADriveAsync(
+        string rutaArchivo, string nombre)
     {
-        var carpeta   = Environment.GetEnvironmentVariable("BACKUPS_RUTA_LOCAL") ?? "backups";
+        var driveId = await _driveService.SubirArchivoAsync(rutaArchivo, nombre);
+        var enlace  = $"https://drive.google.com/file/d/{driveId}/view";
+        _logger.LogInformation("Backup subido a Drive. ID: {Id}", driveId);
+        return (driveId, enlace);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────
+    private static NpgsqlConnection CrearConexion()
+    {
+        var host     = Env("DB_HOST");
+        var port     = Env("DB_PORT");
+        var database = Env("DB_NAME");
+        var user     = Environment.GetEnvironmentVariable("BACKUP_DB_USER") ?? Env("DB_USER");
+        var password = Environment.GetEnvironmentVariable("BACKUP_DB_PASSWORD") ?? Env("DB_PASSWORD");
+        return new NpgsqlConnection(
+            $"Host={host};Port={port};Database={database};Username={user};Password={password};Search Path=public");
+    }
+
+    private static string GenerarNombreArchivo(string tipo, string? tabla)
+    {
         var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmm");
         var database  = Environment.GetEnvironmentVariable("DB_NAME") ?? "floreria_bautista";
-
-        var nombre = tipo == "full"
+        return tipo == "full"
             ? $"backup_{database}_full_{timestamp}.backup"
             : $"backup_{database}_{tabla}_{timestamp}.backup";
-
-        return Path.Combine(carpeta, nombre);
     }
 
-    private string BuildBackupConnectionString()
-    {
-        var host     = Environment.GetEnvironmentVariable("DB_HOST")            ?? "localhost";
-        var port     = Environment.GetEnvironmentVariable("DB_PORT")            ?? "5432";
-        var database = Environment.GetEnvironmentVariable("DB_NAME")            ?? "floreria_bautista";
-        var user     = Environment.GetEnvironmentVariable("BACKUP_DB_USER")     ?? Environment.GetEnvironmentVariable("DB_USER") ?? "app_user";
-        var password = Environment.GetEnvironmentVariable("BACKUP_DB_PASSWORD") ?? Environment.GetEnvironmentVariable("DB_PASSWORD") ?? "";
-        return $"Host={host};Port={port};Database={database};Username={user};Password={password}";
-    }
+    private static string Env(string key) =>
+        Environment.GetEnvironmentVariable(key)
+        ?? throw new InvalidOperationException($"Variable '{key}' no configurada en .env");
 }

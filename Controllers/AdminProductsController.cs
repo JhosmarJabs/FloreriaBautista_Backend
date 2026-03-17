@@ -1,11 +1,44 @@
 using FloreriaBautista.Models.DTOs.Common;
+using FloreriaBautista.Models.DTOs.Products;
+using FloreriaBautista.Services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
-[Route("api/v1/admin/products")]
+[Route("api/admin/products")]
+[Authorize(Roles = "ADMIN")]
 public class AdminProductsController : ControllerBase
 {
-    // TODO: Inyectar servicio en el constructor al implementar cada endpoint
+    private readonly IProductService _productService;
+    public AdminProductsController(IProductService productService) => _productService = productService;
+
+    // GET /api/admin/products?busqueda=&estado=ACTIVO&page=1&size=20
+    [HttpGet]
+    public async Task<IActionResult> Listar(
+        [FromQuery] string? busqueda,
+        [FromQuery] string? estado,
+        [FromQuery] int page = 1,
+        [FromQuery] int size = 20)
+    {
+        var resultado = await _productService.ListarAdminAsync(busqueda, estado, page, size);
+        return Ok(ApiResponseDto<PagedResultDto<ProductSummaryDto>>.Ok(resultado));
+    }
+
+    // POST /api/admin/products
+    [HttpPost]
+    public async Task<IActionResult> Crear([FromBody] CreateProductRequestDto request)
+    {
+        var producto = await _productService.CrearAsync(request);
+        return Ok(ApiResponseDto<ProductResponseDto>.Ok(producto, "Producto creado correctamente."));
+    }
+
+    // POST /api/admin/products/{productId}
+    [HttpPost("{productId:guid}")]
+    public async Task<IActionResult> Actualizar(Guid productId, [FromBody] UpdateProductRequestDto request)
+    {
+        var producto = await _productService.ActualizarAsync(productId, request);
+        return Ok(ApiResponseDto<ProductResponseDto>.Ok(producto, "Producto actualizado correctamente."));
+    }
 }

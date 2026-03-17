@@ -12,7 +12,6 @@ namespace FloreriaBautista.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
-
     public AuthController(IAuthService authService) => _authService = authService;
 
     // POST /api/auth/login
@@ -70,9 +69,33 @@ public class AuthController : ControllerBase
         var userId = ObtenerUsuarioId();
         if (userId == null)
             return Unauthorized(ApiResponseDto<object>.Fail("No autenticado."));
-
         await _authService.LogoutAllAsync(userId.Value);
         return Ok(ApiResponseDto<object>.Ok(null, "Todas las sesiones cerradas."));
+    }
+
+    // POST /api/auth/password/forgot
+    [HttpPost("password/forgot")]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequestDto request)
+    {
+        await _authService.ForgotPasswordAsync(request.Correo);
+        return Ok(ApiResponseDto<object>.Ok(null,
+            "Si el correo existe, recibirás instrucciones para restablecer tu contraseña."));
+    }
+
+    // POST /api/auth/password/reset
+    [HttpPost("password/reset")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequestDto request)
+    {
+        await _authService.ResetPasswordAsync(request);
+        return Ok(ApiResponseDto<object>.Ok(null, "Contraseña restablecida correctamente."));
+    }
+
+    // POST /api/auth/oauth/{provider} — placeholder (Google/Facebook)
+    [HttpPost("oauth/{provider}")]
+    public IActionResult OAuth(string provider)
+    {
+        return Ok(ApiResponseDto<object>.Ok(null,
+            $"OAuth con {provider} no está configurado aún. Próximamente."));
     }
 
     private Guid? ObtenerUsuarioId()
