@@ -3,7 +3,8 @@ namespace FloreriaBautista.Models.DTOs.Backups;
 public class BackupResponseDto
 {
     public Guid      Id              { get; set; }
-    public string    Tipo            { get; set; } = string.Empty; // FULL | TABLE
+    public string    Tipo            { get; set; } = string.Empty; // BD | BD_ARCHIVOS
+    public string    Formato         { get; set; } = "BACKUP";    // BACKUP | SQL
     public string?   NombreTabla     { get; set; }
     public string    Estado          { get; set; } = string.Empty;
     public string?   Descripcion     { get; set; }

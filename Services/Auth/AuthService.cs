@@ -36,8 +36,7 @@ public class AuthService : IAuthService
         if (user.Estado != "ACTIVO")
             throw new UnauthorizedException("Tu cuenta está desactivada.");
 
-        // Texto plano por ahora — reemplaza por BCrypt.Verify cuando actives hashing
-        if (user.PasswordHash != request.Contrasena)
+        if (!BCrypt.Net.BCrypt.Verify(request.Contrasena, user.PasswordHash))
             throw new UnauthorizedException("Correo o contraseña incorrectos.");
 
         var roles = user.UserRoles.Select(ur => ur.Role.Nombre).ToList();
@@ -66,10 +65,11 @@ public class AuthService : IAuthService
         {
             Id               = Guid.NewGuid(),
             Nombre           = request.Nombre.Trim(),
-            Apellido         = request.Apellido.Trim(),
+            ApellidoP        = request.ApellidoP.Trim(),
+            ApellidoM        = request.ApellidoM?.Trim(),
             Correo           = request.Correo.ToLower().Trim(),
             Telefono         = request.Telefono,
-            PasswordHash     = request.Contrasena,
+            PasswordHash     = BCrypt.Net.BCrypt.HashPassword(request.Contrasena),
             EsCliente        = true,
             Estado           = "ACTIVO",
             CorreoVerificado = false,
@@ -170,7 +170,7 @@ public class AuthService : IAuthService
         if (token == null)
             throw new AppException("Token inválido o expirado.");
 
-        token.User.PasswordHash  = request.NuevaContrasena; // texto plano por ahora
+        token.User.PasswordHash  = BCrypt.Net.BCrypt.HashPassword(request.NuevaContrasena);
         token.User.ActualizadoEn = DateTime.UtcNow;
         token.Usado              = true;
 
@@ -203,7 +203,8 @@ public class AuthService : IAuthService
             ?? throw new NotFoundException("Usuario", userId);
 
         if (!string.IsNullOrWhiteSpace(request.Nombre))   user.Nombre  = request.Nombre.Trim();
-        if (!string.IsNullOrWhiteSpace(request.Apellido)) user.Apellido = request.Apellido.Trim();
+        if (!string.IsNullOrWhiteSpace(request.ApellidoP)) user.ApellidoP = request.ApellidoP.Trim();
+        if (!string.IsNullOrWhiteSpace(request.ApellidoM)) user.ApellidoM = request.ApellidoM.Trim();
         if (!string.IsNullOrWhiteSpace(request.Telefono)) user.Telefono = request.Telefono.Trim();
         if (!string.IsNullOrWhiteSpace(request.Sexo))     user.Sexo     = request.Sexo.Trim();
         if (request.FechaNacimiento.HasValue)
@@ -270,7 +271,7 @@ public class AuthService : IAuthService
             Usuario = new UsuarioDto
             {
                 Id     = user.Id,
-                Nombre = $"{user.Nombre} {user.Apellido}".Trim(),
+                Nombre = $"{user.Nombre} {user.ApellidoP}".Trim(),
                 Correo = user.Correo,
                 Roles  = roles
             }
@@ -280,7 +281,8 @@ public class AuthService : IAuthService
     {
         Id               = user.Id,
         Nombre           = user.Nombre,
-        Apellido         = user.Apellido,
+        ApellidoP        = user.ApellidoP,
+        ApellidoM        = user.ApellidoM,
         Correo           = user.Correo,
         Telefono         = user.Telefono,
         Sexo             = user.Sexo,

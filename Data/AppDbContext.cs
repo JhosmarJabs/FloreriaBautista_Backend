@@ -38,6 +38,11 @@ public class AppDbContext : DbContext
     public DbSet<InventoryItem>     InventoryItems     => Set<InventoryItem>();
     public DbSet<InventoryMovement> InventoryMovements => Set<InventoryMovement>();
 
+    // ── Flores (materia prima interna) ────────────────────────────────
+    public DbSet<Flower>         Flowers         => Set<Flower>();
+    public DbSet<FlowerMovement> FlowerMovements => Set<FlowerMovement>();
+    public DbSet<ProductFlower>  ProductFlowers  => Set<ProductFlower>();
+
     // ── Operación técnica ──────────────────────────────────────────
     public DbSet<BackupJob> BackupJobs => Set<BackupJob>();
     public DbSet<ImportJob> ImportJobs => Set<ImportJob>();
@@ -52,16 +57,29 @@ public class AppDbContext : DbContext
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
 
         // Claves compuestas de tablas N:M (no tienen archivo de configuración propio)
-        modelBuilder.Entity<UserRole>()
-            .HasKey(ur => new { ur.UserId, ur.RoleId });
+        modelBuilder.Entity<UserRole>(e => {
+            e.ToTable("user_roles");
+            e.HasKey(ur => new { ur.UserId, ur.RoleId });
+        });
 
-        modelBuilder.Entity<ProductCategory>()
-            .HasKey(pc => new { pc.ProductId, pc.CategoryId });
+        modelBuilder.Entity<ProductCategory>(e => {
+            e.ToTable("product_categories");
+            e.HasKey(pc => new { pc.ProductId, pc.CategoryId });
+        });
 
-        modelBuilder.Entity<ProductCollection>()
-            .HasKey(pc => new { pc.ProductId, pc.CollectionId });
+        modelBuilder.Entity<ProductCollection>(e => {
+            e.ToTable("product_collections");
+            e.HasKey(pc => new { pc.ProductId, pc.CollectionId });
+        });
 
-        modelBuilder.Entity<ProductCustomizationOption>()
-            .HasKey(pco => new { pco.ProductId, pco.CustomizationOptionId });
+        modelBuilder.Entity<ProductFlower>(e => {
+            e.ToTable("product_flowers");
+            e.HasKey(pf => new { pf.ProductId, pf.FlowerId });
+        });
+
+        modelBuilder.Entity<ProductCustomizationOption>(e => {
+            e.ToTable("product_customization_options");
+            e.HasKey(pco => new { pco.ProductId, pco.CustomizationOptionId });
+        });
     }
 }

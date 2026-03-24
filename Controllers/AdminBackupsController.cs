@@ -48,7 +48,7 @@ public class AdminBackupsController : ControllerBase
         if (usuarioId == null)
             return Unauthorized(ApiResponseDto<object>.Fail("No se pudo identificar al usuario."));
 
-        var resultado = await _backupService.CrearBackupFullAsync(request?.Descripcion, usuarioId.Value);
+        var resultado = await _backupService.CrearBackupFullAsync(request?.Descripcion, usuarioId.Value, request?.Formato ?? "BACKUP");
         return Ok(ApiResponseDto<BackupResponseDto>.Ok(resultado));
     }
 
@@ -64,7 +64,7 @@ public class AdminBackupsController : ControllerBase
             return Unauthorized(ApiResponseDto<object>.Fail("No se pudo identificar al usuario."));
 
         var resultado = await _backupService.CrearBackupTablaAsync(
-            request.NombreTabla, request.Descripcion, usuarioId.Value);
+            request.NombreTabla, request.Descripcion, usuarioId.Value, request.Formato);
         return Ok(ApiResponseDto<BackupResponseDto>.Ok(resultado));
     }
 

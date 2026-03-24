@@ -132,7 +132,7 @@ public class DatabaseMaintenanceService : IDatabaseMaintenanceService
                 return await cmd.ExecuteNonQueryAsync();
             }
 
-            dto.Resultados.Add($"✔ audit_logs: {await Ejecutar("DELETE FROM public.audit_logs WHERE creado_en < @p", corte)} eliminados");
+            dto.Resultados.Add($"✔ audit_logs: {await Ejecutar("DELETE FROM public.audit_logs WHERE fecha_hora < @p", corte)} eliminados");
             dto.Resultados.Add($"✔ backup_jobs: {await Ejecutar("DELETE FROM public.backup_jobs WHERE estado IN ('COMPLETADO','ERROR') AND creado_en < @p", corte)} eliminados");
             dto.Resultados.Add($"✔ import_jobs: {await Ejecutar("DELETE FROM public.import_jobs WHERE estado IN ('COMPLETADO','ERROR') AND creado_en < @p", corte)} eliminados");
             dto.Resultados.Add($"✔ auth_tokens: {await Ejecutar("DELETE FROM public.auth_tokens WHERE expira_en < @p", ahora)} eliminados");

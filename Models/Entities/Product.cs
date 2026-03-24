@@ -10,6 +10,9 @@ public class Product
     public bool     EsPersonalizable { get; set; } = false;
     public string   Estado           { get; set; } = "ACTIVO";
     public string?  ImagenUrl        { get; set; }
+    public decimal  CostoBase        { get; set; } = 0;
+    public decimal  MargenFactor     { get; set; } = 2.5m;
+    public decimal  PrecioSugerido   { get; set; } = 0;
     public DateTime CreadoEn        { get; set; } = DateTime.UtcNow;
 
     public ICollection<ProductCategory>            ProductCategories            { get; set; } = [];
@@ -17,4 +20,5 @@ public class Product
     public ICollection<ProductCustomizationOption> ProductCustomizationOptions  { get; set; } = [];
     public ICollection<OrderItem>                  OrderItems                   { get; set; } = [];
     public InventoryItem?                          InventoryItem                { get; set; }
+    public ICollection<ProductFlower>              ProductFlowers               { get; set; } = [];
 }

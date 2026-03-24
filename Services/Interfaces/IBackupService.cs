@@ -8,10 +8,10 @@ public interface IBackupService
     Task<List<string>> ObtenerTablasAsync();
 
     /// <summary>Crea un respaldo completo (pg_dump) y lo sube a Drive.</summary>
-    Task<BackupResponseDto> CrearBackupFullAsync(string? descripcion, Guid usuarioId);
+    Task<BackupResponseDto> CrearBackupFullAsync(string? descripcion, Guid usuarioId, string formato = "BACKUP");
 
     /// <summary>Crea un respaldo de una tabla y lo sube a Drive.</summary>
-    Task<BackupResponseDto> CrearBackupTablaAsync(string nombreTabla, string? descripcion, Guid usuarioId);
+    Task<BackupResponseDto> CrearBackupTablaAsync(string nombreTabla, string? descripcion, Guid usuarioId, string formato = "BACKUP");
 
     /// <summary>Lista todos los respaldos registrados en la BD.</summary>
     Task<List<BackupResponseDto>> ListarBackupsAsync();

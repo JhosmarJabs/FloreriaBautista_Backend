@@ -11,7 +11,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Inyectar variables de entorno en la configuración de ASP.NET Core
 builder.Configuration.AddEnvironmentVariables();
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNameCaseInsensitive = true);
 builder.Services.AddApplicationServices(builder.Configuration);
 builder.Services.AddSwaggerDocumentation();
 

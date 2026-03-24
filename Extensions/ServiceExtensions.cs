@@ -72,7 +72,9 @@ public static class ServiceExtensions
         services.AddScoped<IRestoreService,             RestoreService>();
 
         // ── Tareas programadas (background) ───────────────────────
-        services.AddHostedService<BackupSchedulerService>();
+        // Registrar como singleton para poder inyectarlo en el controller
+        services.AddSingleton<BackupSchedulerService>();
+        services.AddHostedService(sp => sp.GetRequiredService<BackupSchedulerService>());
 
         // TODO: Registrar aquí los demás módulos
         services.AddScoped<IAuthService, AuthService>();
