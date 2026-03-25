@@ -1,3 +1,4 @@
+using FloreriaBautista.Data;
 using FloreriaBautista.Services.Interfaces;
 
 namespace FloreriaBautista.Services.Scheduler;
@@ -21,6 +22,8 @@ public class BackupSchedulerService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        await CargarDesdeDbAsync();
+
         _logger.LogInformation("BackupSchedulerService iniciado. Config: {Freq} | Día: {Dia} | Hora: {Hora}",
             Config.Frecuencia, Config.NombreDia, Config.HoraFormato);
 
@@ -98,6 +101,34 @@ public class BackupSchedulerService : BackgroundService
                 _logger.LogWarning("Health check BD: ERROR — {Error}", resultado.MensajeError);
         }
         catch (Exception ex) { _logger.LogError(ex, "Error en health check"); }
+    }
+
+    private async Task CargarDesdeDbAsync()
+    {
+        try
+        {
+            using var scope    = _scopeFactory.CreateScope();
+            var       context  = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var       settings = await context.SchedulerSettings.FindAsync(1);
+            if (settings != null)
+            {
+                Config.BackupAutomaticoActivo = settings.BackupAutomaticoActivo;
+                Config.Frecuencia             = settings.Frecuencia;
+                Config.DiaSemana              = settings.DiaSemana;
+                Config.Hora                   = settings.Hora;
+                Config.MantenimientoActivo    = settings.MantenimientoActivo;
+                _logger.LogInformation("Scheduler config cargada desde BD: {Freq} | Día {Dia} | Hora {Hora}",
+                    settings.Frecuencia, settings.DiaSemana, settings.Hora);
+            }
+            else
+            {
+                _logger.LogWarning("No se encontró scheduler_settings en BD. Usando valores de variables de entorno.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo cargar scheduler config desde BD. Usando valores por defecto.");
+        }
     }
 
     private bool EsHoraDeEjecucion(DateTime ahora, DateTime? ultimaEjecucion, bool esMantenimiento)

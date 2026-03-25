@@ -108,3 +108,4 @@ public class ActualizarPrecioRequestDto
     public decimal  MargenFactor  { get; set; } = 2.5m;
     public decimal? PrecioFinal   { get; set; } // Si null, usa el sugerido
 }
+

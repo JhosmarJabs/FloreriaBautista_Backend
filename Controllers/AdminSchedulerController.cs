@@ -1,5 +1,7 @@
+using FloreriaBautista.Data;
 using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Models.DTOs.Scheduler;
+using FloreriaBautista.Models.Entities;
 using FloreriaBautista.Services.Scheduler;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,9 +14,13 @@ namespace FloreriaBautista.Controllers;
 public class AdminSchedulerController : ControllerBase
 {
     private readonly BackupSchedulerService _scheduler;
+    private readonly AppDbContext           _context;
 
-    public AdminSchedulerController(BackupSchedulerService scheduler)
-        => _scheduler = scheduler;
+    public AdminSchedulerController(BackupSchedulerService scheduler, AppDbContext context)
+    {
+        _scheduler = scheduler;
+        _context   = context;
+    }
 
     // GET /api/admin/scheduler — ver configuración actual
     [HttpGet]
@@ -35,9 +41,9 @@ public class AdminSchedulerController : ControllerBase
         }));
     }
 
-    // POST /api/admin/scheduler — actualizar configuración en tiempo real
+    // POST /api/admin/scheduler — actualizar configuración en tiempo real y persistir en BD
     [HttpPost]
-    public IActionResult ActualizarConfig([FromBody] UpdateSchedulerConfigDto request)
+    public async Task<IActionResult> ActualizarConfig([FromBody] UpdateSchedulerConfigDto request)
     {
         var cfg = _scheduler.Config;
 
@@ -68,6 +74,32 @@ public class AdminSchedulerController : ControllerBase
 
         if (request.MantenimientoActivo.HasValue)
             cfg.MantenimientoActivo = request.MantenimientoActivo.Value;
+
+        // Persistir en BD (upsert singleton id=1)
+        var settings = await _context.SchedulerSettings.FindAsync(1);
+        if (settings is null)
+        {
+            _context.SchedulerSettings.Add(new SchedulerSettings
+            {
+                Id                     = 1,
+                BackupAutomaticoActivo = cfg.BackupAutomaticoActivo,
+                Frecuencia             = cfg.Frecuencia,
+                DiaSemana              = cfg.DiaSemana,
+                Hora                   = cfg.Hora,
+                MantenimientoActivo    = cfg.MantenimientoActivo,
+                ActualizadoEn          = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            settings.BackupAutomaticoActivo = cfg.BackupAutomaticoActivo;
+            settings.Frecuencia             = cfg.Frecuencia;
+            settings.DiaSemana              = cfg.DiaSemana;
+            settings.Hora                   = cfg.Hora;
+            settings.MantenimientoActivo    = cfg.MantenimientoActivo;
+            settings.ActualizadoEn          = DateTime.UtcNow;
+        }
+        await _context.SaveChangesAsync();
 
         return Ok(ApiResponseDto<SchedulerConfigDto>.Ok(new SchedulerConfigDto
         {

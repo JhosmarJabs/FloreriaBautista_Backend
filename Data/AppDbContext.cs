@@ -44,9 +44,10 @@ public class AppDbContext : DbContext
     public DbSet<ProductFlower>  ProductFlowers  => Set<ProductFlower>();
 
     // ── Operación técnica ──────────────────────────────────────────
-    public DbSet<BackupJob> BackupJobs => Set<BackupJob>();
-    public DbSet<ImportJob> ImportJobs => Set<ImportJob>();
-    public DbSet<AuditLog>  AuditLogs  => Set<AuditLog>();
+    public DbSet<BackupJob>        BackupJobs        => Set<BackupJob>();
+    public DbSet<ImportJob>        ImportJobs        => Set<ImportJob>();
+    public DbSet<AuditLog>         AuditLogs         => Set<AuditLog>();
+    public DbSet<SchedulerSettings> SchedulerSettings => Set<SchedulerSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -358,6 +358,147 @@ public class ImportService : IImportService
         return dto;
     }
 
+    // ── Importar Flores ───────────────────────────────────────────
+    // CSV esperado: nombre,color,precio_costo,unidad_medida,es_flor_primaria,stock_minimo,stock_inicial
+    // Upsert por nombre + color
+    public async Task<ImportResultDto> ImportarFloresAsync(Stream csv, string nombreArchivo)
+    {
+        var sw  = Stopwatch.StartNew();
+        var dto = new ImportResultDto { Archivo = nombreArchivo, EjecutadoEn = DateTime.UtcNow };
+
+        using var ms = new MemoryStream();
+        await csv.CopyToAsync(ms);
+        var bytes = ms.ToArray();
+
+        Encoding encoding;
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+            encoding = new UTF8Encoding(true);
+        else
+        {
+            try
+            {
+                var utf8 = new UTF8Encoding(false, throwOnInvalidBytes: true);
+                utf8.GetString(bytes);
+                encoding = utf8;
+            }
+            catch { encoding = Encoding.GetEncoding("ISO-8859-1"); }
+        }
+
+        var texto  = encoding.GetString(bytes);
+        var lineas = texto
+            .Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None)
+            .Select(l => l.Trim())
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .ToList();
+
+        var datos     = lineas.Skip(1).ToList();
+        dto.TotalFilas = datos.Count;
+        var separador  = lineas.Count > 0 ? DetectarSeparador(lineas[0]) : ',';
+
+        var encabezados = ParsearCsv(lineas[0], separador)
+            .Select((h, i) => (h.Trim().ToLower(), i))
+            .ToDictionary(x => x.Item1, x => x.Item2);
+
+        string Col(string[] cols, string key, string def = "") =>
+            encabezados.TryGetValue(key, out var idx2) && idx2 < cols.Length
+                ? cols[idx2].Trim() : def;
+
+        var floresExist = await _context.Flowers.ToListAsync();
+
+        foreach (var (linea, idx) in datos.Select((l, i) => (l, i + 2)))
+        {
+            try
+            {
+                var cols = ParsearCsv(linea, separador);
+                if (cols.Length < 2)
+                {
+                    dto.Errores++;
+                    dto.DetalleErrores.Add($"Fila {idx}: columnas insuficientes ({cols.Length})");
+                    continue;
+                }
+
+                var nombre     = Col(cols, "nombre");
+                var color      = Col(cols, "color");
+                var precioCostoRaw = Col(cols, "precio_costo", Col(cols, "preciocosto", "0"));
+                var unidad     = Col(cols, "unidad_medida", Col(cols, "unidadmedida", "TALLO"));
+                var esPrimariaRaw = Col(cols, "es_flor_primaria", Col(cols, "esflorprimaria", "false")).ToLower();
+                var stockMinimoRaw  = Col(cols, "stock_minimo",   Col(cols, "stockminimo", "0"));
+                // acepta stock_actual (del export) o stock_inicial (para carga nueva)
+                var stockInicialRaw = Col(cols, "stock_actual",   Col(cols, "stock_inicial",
+                                      Col(cols, "stockactual",    Col(cols, "stockinicial", "0"))));
+
+                if (string.IsNullOrEmpty(nombre) || string.IsNullOrEmpty(color))
+                {
+                    dto.Errores++;
+                    dto.DetalleErrores.Add($"Fila {idx}: 'nombre' y 'color' son obligatorios");
+                    continue;
+                }
+
+                if (!decimal.TryParse(precioCostoRaw,
+                    System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var precioCosto))
+                {
+                    dto.Errores++;
+                    dto.DetalleErrores.Add($"Fila {idx}: precio_costo inválido '{precioCostoRaw}'");
+                    continue;
+                }
+
+                if (!int.TryParse(stockMinimoRaw, out var stockMinimo))  stockMinimo  = 0;
+                if (!int.TryParse(stockInicialRaw, out var stockInicial)) stockInicial = 0;
+                var esPrimaria = esPrimariaRaw is "true" or "1" or "si" or "sí";
+                var unidadNorm = string.IsNullOrWhiteSpace(unidad) ? "TALLO" : unidad.ToUpper();
+
+                var existente = floresExist.FirstOrDefault(f =>
+                    f.Nombre.Equals(nombre, StringComparison.OrdinalIgnoreCase) &&
+                    f.Color.Equals(color,  StringComparison.OrdinalIgnoreCase));
+
+                if (existente != null)
+                {
+                    existente.PrecioCosto    = precioCosto;
+                    existente.UnidadMedida   = unidadNorm;
+                    existente.EsFlorPrimaria = esPrimaria;
+                    existente.StockMinimo    = stockMinimo;
+                    existente.StockActual    = stockInicial;
+                    existente.ActualizadoEn  = DateTime.UtcNow;
+                    dto.Actualizados++;
+                }
+                else
+                {
+                    _context.Flowers.Add(new Flower
+                    {
+                        Id             = Guid.NewGuid(),
+                        Nombre         = nombre,
+                        Color          = color,
+                        PrecioCosto    = precioCosto,
+                        UnidadMedida   = unidadNorm,
+                        EsFlorPrimaria = esPrimaria,
+                        StockMinimo    = stockMinimo,
+                        StockActual    = stockInicial,
+                        Estado         = "ACTIVA",
+                        CreadoEn       = DateTime.UtcNow,
+                        ActualizadoEn  = DateTime.UtcNow
+                    });
+                    dto.Insertados++;
+                }
+            }
+            catch (Exception ex)
+            {
+                dto.Errores++;
+                dto.DetalleErrores.Add($"Fila {idx}: {ex.Message}");
+            }
+        }
+
+        await _context.SaveChangesAsync();
+        sw.Stop();
+        dto.DuracionMs = sw.Elapsed.TotalMilliseconds;
+
+        _logger.LogInformation("Importación flores: {I} insertadas, {A} actualizadas, {E} errores en {Ms} ms",
+            dto.Insertados, dto.Actualizados, dto.Errores, dto.DuracionMs);
+
+        return dto;
+    }
+
     // ── Parser CSV simple ─────────────────────────────────────────
     // Detecta automáticamente si el separador es coma o tabulador
     private static char DetectarSeparador(string primeraLinea)

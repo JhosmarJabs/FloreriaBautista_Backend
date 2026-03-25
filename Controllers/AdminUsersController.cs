@@ -25,16 +25,9 @@ public class AdminUsersController : ControllerBase
         if (existe)
             return Conflict(ApiResponseDto<object>.Fail("Ya existe un usuario con ese correo."));
 
-        var rolesDb = await _context.Roles
-            .Where(r => request.Roles.Contains(r.Nombre))
-            .ToListAsync();
-
-        if (rolesDb.Count != request.Roles.Count)
-        {
-            var invalidos = request.Roles.Except(rolesDb.Select(r => r.Nombre));
-            return BadRequest(ApiResponseDto<object>.Fail(
-                $"Roles no encontrados: {string.Join(", ", invalidos)}"));
-        }
+        var rolEmpleado = await _context.Roles.FirstOrDefaultAsync(r => r.Nombre == "EMPLEADO");
+        if (rolEmpleado == null)
+            return StatusCode(500, ApiResponseDto<object>.Fail("Rol EMPLEADO no encontrado en la base de datos."));
 
         var user = new User
         {
@@ -45,15 +38,14 @@ public class AdminUsersController : ControllerBase
             Correo           = request.Correo.ToLower().Trim(),
             Telefono         = request.Telefono,
             PasswordHash     = BCrypt.Net.BCrypt.HashPassword(request.Password),
-            EsCliente        = request.Roles.Contains("CLIENTE"),
+            EsCliente        = false,
             Estado           = "ACTIVO",
             CorreoVerificado = false,
             CreadoEn         = DateTime.UtcNow,
             ActualizadoEn    = DateTime.UtcNow
         };
 
-        foreach (var rol in rolesDb)
-            user.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = rol.Id });
+        user.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = rolEmpleado.Id });
 
         _context.Users.Add(user);
         await _context.SaveChangesAsync();
@@ -67,7 +59,7 @@ public class AdminUsersController : ControllerBase
             Correo   = user.Correo,
             Telefono = user.Telefono,
             Estado   = user.Estado,
-            Roles    = rolesDb.Select(r => r.Nombre).ToList(),
+            Roles    = ["EMPLEADO"],
             CreadoEn = user.CreadoEn
         }));
     }

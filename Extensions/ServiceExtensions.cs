@@ -7,6 +7,7 @@ using FloreriaBautista.Services.Scheduler;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using FloreriaBautista.Services.Auth;
 using FloreriaBautista.Services;
+using FloreriaBautista.Services.Audit;
 using FloreriaBautista.Services.ImportExport;
 using FloreriaBautista.Services.Reports;
 using Microsoft.EntityFrameworkCore;
@@ -77,6 +78,7 @@ public static class ServiceExtensions
         services.AddHostedService(sp => sp.GetRequiredService<BackupSchedulerService>());
 
         // TODO: Registrar aquí los demás módulos
+        services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IExportService, ExportService>();
         services.AddScoped<IImportService, ImportService>();

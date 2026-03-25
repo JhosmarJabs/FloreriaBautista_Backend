@@ -95,6 +95,41 @@ public class ExportService : IExportService
         return (Encoding.UTF8.GetBytes(sb.ToString()), nombre);
     }
 
+    // ── Exportar Flores ───────────────────────────────────────────
+    // Columnas: nombre,color,precio_costo,unidad_medida,es_flor_primaria,stock_minimo,stock_actual,estado,creado_en
+    public async Task<(byte[] Contenido, string NombreArchivo)> ExportarFloresAsync()
+    {
+        var sw = Stopwatch.StartNew();
+
+        var flores = await _context.Flowers
+            .OrderBy(f => f.Nombre)
+            .ToListAsync();
+
+        var sb = new StringBuilder();
+        sb.AppendLine("nombre,color,precio_costo,unidad_medida,es_flor_primaria,stock_minimo,stock_actual,estado,creado_en");
+
+        foreach (var f in flores)
+        {
+            sb.AppendLine(string.Join(",",
+                Escapar(f.Nombre),
+                Escapar(f.Color),
+                f.PrecioCosto.ToString("F2"),
+                f.UnidadMedida,
+                f.EsFlorPrimaria ? "true" : "false",
+                f.StockMinimo,
+                f.StockActual,
+                f.Estado,
+                f.CreadoEn.ToString("yyyy-MM-dd HH:mm:ss")
+            ));
+        }
+
+        sw.Stop();
+        _logger.LogInformation("Exportadas {Count} flores en {Ms} ms", flores.Count, sw.ElapsedMilliseconds);
+
+        var nombre = $"flores_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return (Encoding.UTF8.GetBytes(sb.ToString()), nombre);
+    }
+
     // Escapa un valor para CSV: encierra en comillas si contiene coma, comilla o salto
     private static string Escapar(string valor)
     {
