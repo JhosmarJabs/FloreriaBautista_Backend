@@ -12,6 +12,8 @@ public class SchedulerSettingsConfiguration : IEntityTypeConfiguration<Scheduler
         builder.HasKey(s => s.Id);
 
         builder.Property(s => s.Frecuencia).HasMaxLength(20).HasDefaultValue("SEMANAL");
+        builder.Property(s => s.FrecuenciaMantenimiento).HasMaxLength(20).HasDefaultValue("SEMANAL");
+        builder.Property(s => s.HoraMantenimiento).HasDefaultValue(1);
         builder.Property(s => s.ActualizadoEn).HasDefaultValueSql("NOW()");
     }
 }

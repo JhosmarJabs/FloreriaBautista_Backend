@@ -11,10 +11,14 @@ namespace FloreriaBautista.Controllers;
 [Authorize(Roles = "ADMIN")]
 public class AdminBackupsController : ControllerBase
 {
-    private readonly IBackupService _backupService;
+    private readonly IBackupService  _backupService;
+    private readonly IAuditService   _audit;
 
-    public AdminBackupsController(IBackupService backupService)
-        => _backupService = backupService;
+    public AdminBackupsController(IBackupService backupService, IAuditService audit)
+    {
+        _backupService = backupService;
+        _audit         = audit;
+    }
 
     // GET /api/admin/backups — lista archivos .backup en carpeta local
     [HttpGet]
@@ -49,6 +53,10 @@ public class AdminBackupsController : ControllerBase
             return Unauthorized(ApiResponseDto<object>.Fail("No se pudo identificar al usuario."));
 
         var resultado = await _backupService.CrearBackupFullAsync(request?.Descripcion, usuarioId.Value, request?.Formato ?? "BACKUP");
+
+        await _audit.RegistrarAsync("BACKUP_FULL", "BackupJob", resultado.Id.ToString(), usuarioId,
+            new { resultado.RutaArchivoLocal, resultado.Estado, resultado.SubidoADrive, resultado.Descripcion });
+
         return Ok(ApiResponseDto<BackupResponseDto>.Ok(resultado));
     }
 
@@ -65,6 +73,10 @@ public class AdminBackupsController : ControllerBase
 
         var resultado = await _backupService.CrearBackupTablaAsync(
             request.NombreTabla, request.Descripcion, usuarioId.Value, request.Formato);
+
+        await _audit.RegistrarAsync("BACKUP_TABLA", "BackupJob", resultado.Id.ToString(), usuarioId,
+            new { resultado.RutaArchivoLocal, resultado.Estado, resultado.SubidoADrive, Tabla = request.NombreTabla, resultado.Descripcion });
+
         return Ok(ApiResponseDto<BackupResponseDto>.Ok(resultado));
     }
 

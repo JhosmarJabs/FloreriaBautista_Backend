@@ -65,11 +65,15 @@ public class BackupSchedulerService : BackgroundService
     {
         using var scope         = _scopeFactory.CreateScope();
         var       backupService = scope.ServiceProvider.GetRequiredService<IBackupService>();
+        var       audit         = scope.ServiceProvider.GetRequiredService<IAuditService>();
         try
         {
             var resultado = await backupService.CrearBackupFullAsync("Backup automático", Guid.Empty);
             _logger.LogInformation("Backup automático {Estado}. Drive: {Subido}",
                 resultado.Estado, resultado.SubidoADrive ? "✔" : "✘");
+
+            await audit.RegistrarAsync("BACKUP_AUTOMATICO", "BackupJob", resultado.Id.ToString(), null,
+                new { resultado.RutaArchivoLocal, resultado.Estado, resultado.SubidoADrive, Config.Frecuencia });
         }
         catch (Exception ex) { _logger.LogError(ex, "Error en backup automático"); }
     }
@@ -112,13 +116,18 @@ public class BackupSchedulerService : BackgroundService
             var       settings = await context.SchedulerSettings.FindAsync(1);
             if (settings != null)
             {
-                Config.BackupAutomaticoActivo = settings.BackupAutomaticoActivo;
-                Config.Frecuencia             = settings.Frecuencia;
-                Config.DiaSemana              = settings.DiaSemana;
-                Config.Hora                   = settings.Hora;
-                Config.MantenimientoActivo    = settings.MantenimientoActivo;
-                _logger.LogInformation("Scheduler config cargada desde BD: {Freq} | Día {Dia} | Hora {Hora}",
-                    settings.Frecuencia, settings.DiaSemana, settings.Hora);
+                Config.BackupAutomaticoActivo      = settings.BackupAutomaticoActivo;
+                Config.Frecuencia                  = settings.Frecuencia;
+                Config.DiaSemana                   = settings.DiaSemana;
+                Config.Hora                        = settings.Hora;
+                Config.MantenimientoActivo         = settings.MantenimientoActivo;
+                Config.FrecuenciaMantenimiento     = settings.FrecuenciaMantenimiento;
+                Config.DiaSemanaMantenimiento      = settings.DiaSemanaMantenimiento;
+                Config.HoraMantenimiento           = settings.HoraMantenimiento;
+                _logger.LogInformation(
+                    "Scheduler config cargada desde BD — Backup: {Freq} Día {Dia} {Hora}:00 | Mant: {FreqM} Día {DiaM} {HoraM}:00",
+                    settings.Frecuencia, settings.DiaSemana, settings.Hora,
+                    settings.FrecuenciaMantenimiento, settings.DiaSemanaMantenimiento, settings.HoraMantenimiento);
             }
             else
             {
@@ -133,23 +142,25 @@ public class BackupSchedulerService : BackgroundService
 
     private bool EsHoraDeEjecucion(DateTime ahora, DateTime? ultimaEjecucion, bool esMantenimiento)
     {
-        var hora = esMantenimiento ? Config.Hora + 1 : Config.Hora;
+        var hora      = esMantenimiento ? Config.HoraMantenimiento       : Config.Hora;
+        var diaSemana = esMantenimiento ? Config.DiaSemanaMantenimiento  : Config.DiaSemana;
+        var frecuencia = esMantenimiento ? Config.FrecuenciaMantenimiento : Config.Frecuencia;
 
         bool esHora;
-        if (Config.Frecuencia == "DIARIO")
+        if (frecuencia == "DIARIO")
         {
             esHora = ahora.Hour == hora && ahora.Minute < 5;
         }
         else // SEMANAL
         {
-            var esDia = (int)ahora.DayOfWeek == Config.DiaSemana;
+            var esDia = (int)ahora.DayOfWeek == diaSemana;
             esHora    = esDia && ahora.Hour == hora && ahora.Minute < 5;
         }
 
         if (!esHora) return false;
         if (ultimaEjecucion is null) return true;
 
-        var horasMinimas = Config.Frecuencia == "DIARIO" ? 23.0 : 167.0; // ~7 días
+        var horasMinimas = frecuencia == "DIARIO" ? 23.0 : 167.0; // ~7 días
         return (ahora - ultimaEjecucion.Value).TotalHours > horasMinimas;
     }
 }
