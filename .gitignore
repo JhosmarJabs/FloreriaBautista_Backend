@@ -4,7 +4,7 @@ obj/
 *.user
 .vs/
 .vscode/
-
+.claude/
 
 # Secretos — NUNCA subir a git
 .env
@@ -21,3 +21,6 @@ google_token.json
 # Google OAuth2 — respuestas de token generadas
 Google.Apis.Auth.OAuth2.Responses.TokenResponse*
 TokenResponse*
+*.sql
+.geminirules
+.clauderules

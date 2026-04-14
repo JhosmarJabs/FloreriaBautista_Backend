@@ -7,8 +7,9 @@ using Microsoft.AspNetCore.Mvc;
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
+[Tags("Administrador")]
 [Route("api/admin/orders")]
-[Authorize(Roles = "ADMIN,VENTAS")]
+[Authorize(Roles = "ADMIN,EMPLEADO")]
 public class AdminOrdersController : ControllerBase
 {
     private readonly IOrderService _orderService;

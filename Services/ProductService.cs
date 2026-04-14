@@ -26,8 +26,7 @@ public class ProductService : IProductService
         var query = _context.Products
             .Include(p => p.ProductCategories).ThenInclude(pc => pc.Category)
             .Include(p => p.ProductCollections).ThenInclude(pc => pc.Collection)
-            .Include(p => p.InventoryItem)
-            .Where(p => p.Estado == "ACTIVO")
+            .Where(p => p.Activo && p.Estado == "ACTIVO" && p.Visibilidad != "SOLO_SUCURSAL")
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(busqueda))
@@ -54,7 +53,7 @@ public class ProductService : IProductService
                 Tipo      = p.Tipo,
                 Estado    = p.Estado,
                 ImagenUrl = p.ImagenUrl,
-                Stock     = p.InventoryItem != null ? p.InventoryItem.StockActual : null
+                Stock     = null
             })
             .ToListAsync();
 
@@ -74,8 +73,19 @@ public class ProductService : IProductService
         var p = await _context.Products
             .Include(p => p.ProductCategories).ThenInclude(pc => pc.Category)
             .Include(p => p.ProductCollections).ThenInclude(pc => pc.Collection)
-            .Include(p => p.InventoryItem)
-            .FirstOrDefaultAsync(p => p.Id == id && p.Estado == "ACTIVO")
+            .FirstOrDefaultAsync(p => p.Id == id && p.Activo && p.Estado == "ACTIVO" && p.Visibilidad != "SOLO_SUCURSAL")
+            ?? throw new NotFoundException("Producto", id);
+
+        return MapToDto(p);
+    }
+
+    // ── Detalle admin ─────────────────────────────────────────────
+    public async Task<ProductResponseDto> ObtenerAdminAsync(Guid id)
+    {
+        var p = await _context.Products
+            .Include(p => p.ProductCategories).ThenInclude(pc => pc.Category)
+            .Include(p => p.ProductCollections).ThenInclude(pc => pc.Collection)
+            .FirstOrDefaultAsync(p => p.Id == id && p.Activo)
             ?? throw new NotFoundException("Producto", id);
 
         return MapToDto(p);
@@ -85,9 +95,7 @@ public class ProductService : IProductService
     public async Task<PagedResultDto<ProductSummaryDto>> ListarAdminAsync(
         string? busqueda, string? estado, int page, int size)
     {
-        var query = _context.Products
-            .Include(p => p.InventoryItem)
-            .AsQueryable();
+        var query = _context.Products.Where(p => p.Activo).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(busqueda))
             query = query.Where(p => p.Nombre.Contains(busqueda));
@@ -108,7 +116,7 @@ public class ProductService : IProductService
                 Tipo      = p.Tipo,
                 Estado    = p.Estado,
                 ImagenUrl = p.ImagenUrl,
-                Stock     = p.InventoryItem != null ? p.InventoryItem.StockActual : null
+                Stock     = null
             })
             .ToListAsync();
 
@@ -134,12 +142,14 @@ public class ProductService : IProductService
             Tipo             = request.Tipo.Trim().ToUpper(),
             EsPersonalizable = request.EsPersonalizable,
             Estado           = request.Estado.Trim().ToUpper(),
+            Visibilidad      = request.Visibilidad.Trim().ToUpper(),
             ImagenUrl        = request.ImagenUrl,
             CreadoEn         = DateTime.UtcNow
         };
 
         await AsignarCategorias(producto, request.Categorias);
         await AsignarColecciones(producto, request.Colecciones);
+        await AsignarReceta(producto, request.Receta);
 
         _context.Products.Add(producto);
         await _context.SaveChangesAsync();
@@ -154,32 +164,65 @@ public class ProductService : IProductService
         var producto = await _context.Products
             .Include(p => p.ProductCategories)
             .Include(p => p.ProductCollections)
+            .Include(p => p.ProductRecipes)
             .FirstOrDefaultAsync(p => p.Id == id)
             ?? throw new NotFoundException("Producto", id);
 
+        // Actualizar propiedades básicas
         if (!string.IsNullOrWhiteSpace(request.Nombre))      producto.Nombre      = request.Nombre.Trim();
         if (!string.IsNullOrWhiteSpace(request.Descripcion)) producto.Descripcion = request.Descripcion.Trim();
         if (request.PrecioBase.HasValue)                     producto.PrecioBase  = request.PrecioBase.Value;
-        if (!string.IsNullOrWhiteSpace(request.Tipo))        producto.Tipo        = request.Tipo.Trim().ToUpper();
+        if (!string.IsNullOrWhiteSpace(request.Tipo))        producto.Tipo        = request.Tipo.Trim();
         if (request.EsPersonalizable.HasValue)               producto.EsPersonalizable = request.EsPersonalizable.Value;
         if (!string.IsNullOrWhiteSpace(request.Estado))      producto.Estado      = request.Estado.Trim().ToUpper();
+        if (!string.IsNullOrWhiteSpace(request.Visibilidad)) producto.Visibilidad = request.Visibilidad.Trim().ToUpper();
         if (request.ImagenUrl != null)                       producto.ImagenUrl   = request.ImagenUrl;
+        if (request.Activo.HasValue)                         producto.Activo      = request.Activo.Value;
 
+        // Actualizar Categorías
         if (request.Categorias != null)
         {
-            _context.RemoveRange(producto.ProductCategories);
+            producto.ProductCategories.Clear();
             await AsignarCategorias(producto, request.Categorias);
         }
 
+        // Actualizar Colecciones
         if (request.Colecciones != null)
         {
-            _context.RemoveRange(producto.ProductCollections);
+            producto.ProductCollections.Clear();
             await AsignarColecciones(producto, request.Colecciones);
         }
 
-        await _context.SaveChangesAsync();
-        _logger.LogInformation("Producto actualizado: {Id}", id);
+        // Actualizar Receta
+        if (request.Receta != null)
+        {
+            producto.ProductRecipes.Clear();
+            await AsignarReceta(producto, request.Receta);
+        }
+
+        try 
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            if (!_context.Products.Any(p => p.Id == id))
+                throw new NotFoundException("Producto", id);
+            throw;
+        }
+
+        _logger.LogInformation("Producto actualizado correctamente: {Id}", id);
         return await ObtenerConDetalleAsync(id);
+    }
+
+    public async Task EliminarAsync(Guid id)
+    {
+        var producto = await _context.Products.FindAsync(id)
+            ?? throw new NotFoundException("Producto", id);
+
+        producto.Activo = false;
+        await _context.SaveChangesAsync();
+        _logger.LogInformation("Producto desactivado (borrado lógico): {Id}", id);
     }
 
     // ── Helpers ───────────────────────────────────────────────────
@@ -205,12 +248,26 @@ public class ProductService : IProductService
         }
     }
 
+    private async Task AsignarReceta(Product producto, List<ProductRecipeRequestDto> receta)
+    {
+        foreach (var item in receta)
+        {
+            producto.ProductRecipes.Add(new ProductRecipe
+            {
+                Id = Guid.NewGuid(),
+                ProductId = producto.Id,
+                InventoryItemId = item.InventoryItemId,
+                CantidadRequerida = item.Cantidad
+            });
+        }
+    }
+
     private async Task<ProductResponseDto> ObtenerConDetalleAsync(Guid id)
     {
         var p = await _context.Products
             .Include(p => p.ProductCategories).ThenInclude(pc => pc.Category)
             .Include(p => p.ProductCollections).ThenInclude(pc => pc.Collection)
-            .Include(p => p.InventoryItem)
+            .Include(p => p.ProductRecipes).ThenInclude(pr => pr.InventoryItem)
             .FirstAsync(p => p.Id == id);
         return MapToDto(p);
     }
@@ -224,10 +281,19 @@ public class ProductService : IProductService
         Tipo             = p.Tipo,
         EsPersonalizable = p.EsPersonalizable,
         Estado           = p.Estado,
+        Visibilidad      = p.Visibilidad,
         ImagenUrl        = p.ImagenUrl,
+        Activo           = p.Activo,
         Categorias       = p.ProductCategories.Select(pc => pc.Category.Nombre).ToList(),
         Colecciones      = p.ProductCollections.Select(pc => pc.Collection.Nombre).ToList(),
-        StockActual      = p.InventoryItem?.StockActual,
+        Receta           = p.ProductRecipes.Select(pr => new RecipeItemDto
+        {
+            InventoryItemId = pr.InventoryItemId,
+            Nombre          = pr.InventoryItem.Nombre,
+            Cantidad        = pr.CantidadRequerida,
+            PrecioCosto     = pr.InventoryItem.PrecioCosto,
+            EsFlorPrimaria  = pr.InventoryItem.EsFlorPrimaria
+        }).ToList(),
         CreadoEn         = p.CreadoEn
     };
 }

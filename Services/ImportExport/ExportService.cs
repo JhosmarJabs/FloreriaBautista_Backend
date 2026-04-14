@@ -8,7 +8,7 @@ namespace FloreriaBautista.Services.ImportExport;
 
 public class ExportService : IExportService
 {
-    private readonly AppDbContext          _context;
+    private readonly AppDbContext           _context;
     private readonly ILogger<ExportService> _logger;
 
     public ExportService(AppDbContext context, ILogger<ExportService> logger)
@@ -18,8 +18,7 @@ public class ExportService : IExportService
     }
 
     // ── Exportar Productos ────────────────────────────────────────
-    // Columnas: id, nombre, descripcion, precio_base, tipo, es_personalizable,
-    //           estado, imagen_url, categorias, colecciones, creado_en
+    // Columnas: id,nombre,descripcion,precio_base,tipo,es_personalizable,estado,visibilidad,imagen_url,categorias,colecciones,creado_en
     public async Task<(byte[] Contenido, string NombreArchivo)> ExportarProductosAsync()
     {
         var sw = Stopwatch.StartNew();
@@ -31,9 +30,7 @@ public class ExportService : IExportService
             .ToListAsync();
 
         var sb = new StringBuilder();
-
-        // Encabezado
-        sb.AppendLine("id,nombre,descripcion,precio_base,tipo,es_personalizable,estado,imagen_url,categorias,colecciones,creado_en");
+        sb.AppendLine("id,nombre,descripcion,precio_base,tipo,es_personalizable,estado,visibilidad,imagen_url,categorias,colecciones,creado_en");
 
         foreach (var p in productos)
         {
@@ -48,6 +45,7 @@ public class ExportService : IExportService
                 Escapar(p.Tipo),
                 p.EsPersonalizable ? "true" : "false",
                 Escapar(p.Estado),
+                Escapar(p.Visibilidad),
                 Escapar(p.ImagenUrl ?? ""),
                 Escapar(categorias),
                 Escapar(colecciones),
@@ -63,28 +61,28 @@ public class ExportService : IExportService
     }
 
     // ── Exportar Inventario ───────────────────────────────────────
-    // Columnas: id, product_id, nombre_producto, stock_actual, stock_minimo, sucursal
+    // Columnas: id,nombre,stock_actual,stock_minimo,sucursal,suma_al_costo,unidad_medida
     public async Task<(byte[] Contenido, string NombreArchivo)> ExportarInventarioAsync()
     {
         var sw = Stopwatch.StartNew();
 
         var items = await _context.InventoryItems
-            .Include(i => i.Product)
-            .OrderBy(i => i.Product.Nombre)
+            .OrderBy(i => i.Nombre)
             .ToListAsync();
 
         var sb = new StringBuilder();
-        sb.AppendLine("id,product_id,nombre_producto,stock_actual,stock_minimo,sucursal");
+        sb.AppendLine("id,nombre,stock_actual,stock_minimo,sucursal,suma_al_costo,unidad_medida");
 
         foreach (var i in items)
         {
             sb.AppendLine(string.Join(",",
                 i.Id,
-                i.ProductId,
-                Escapar(i.Product.Nombre),
+                Escapar(i.Nombre),
                 i.StockActual,
                 i.StockMinimo,
-                Escapar(i.Sucursal)
+                Escapar(i.Sucursal),
+                i.SumaAlCosto ? "true" : "false",
+                Escapar(i.UnidadMedida ?? "")
             ));
         }
 
@@ -95,46 +93,82 @@ public class ExportService : IExportService
         return (Encoding.UTF8.GetBytes(sb.ToString()), nombre);
     }
 
-    // ── Exportar Flores ───────────────────────────────────────────
-    // Columnas: nombre,color,precio_costo,unidad_medida,es_flor_primaria,stock_minimo,stock_actual,estado,creado_en
-    public async Task<(byte[] Contenido, string NombreArchivo)> ExportarFloresAsync()
-    {
-        var sw = Stopwatch.StartNew();
-
-        var flores = await _context.Flowers
-            .OrderBy(f => f.Nombre)
-            .ToListAsync();
-
-        var sb = new StringBuilder();
-        sb.AppendLine("nombre,color,precio_costo,unidad_medida,es_flor_primaria,stock_minimo,stock_actual,estado,creado_en");
-
-        foreach (var f in flores)
-        {
-            sb.AppendLine(string.Join(",",
-                Escapar(f.Nombre),
-                Escapar(f.Color),
-                f.PrecioCosto.ToString("F2"),
-                f.UnidadMedida,
-                f.EsFlorPrimaria ? "true" : "false",
-                f.StockMinimo,
-                f.StockActual,
-                f.Estado,
-                f.CreadoEn.ToString("yyyy-MM-dd HH:mm:ss")
-            ));
-        }
-
-        sw.Stop();
-        _logger.LogInformation("Exportadas {Count} flores en {Ms} ms", flores.Count, sw.ElapsedMilliseconds);
-
-        var nombre = $"flores_{DateTime.Now:yyyyMMdd_HHmm}.csv";
-        return (Encoding.UTF8.GetBytes(sb.ToString()), nombre);
-    }
-
-    // Escapa un valor para CSV: encierra en comillas si contiene coma, comilla o salto
     private static string Escapar(string valor)
     {
         if (valor.Contains(',') || valor.Contains('"') || valor.Contains('\n'))
             return $"\"{valor.Replace("\"", "\"\"")}\"";
         return valor;
+    }
+
+    // ── Exportar Pedidos ──────────────────────────────────────────
+    public async Task<(byte[] Contenido, string NombreArchivo)> ExportarPedidosAsync()
+    {
+        var sw = Stopwatch.StartNew();
+        var pedidos = await _context.Orders
+            .Include(o => o.Customer)
+            .OrderByDescending(o => o.FechaCreacion)
+            .ToListAsync();
+
+        var sb = new StringBuilder();
+        sb.AppendLine("id,id_local_offline,cliente,tipo_pedido,canal,estado,fecha_creacion,fecha_entrega,hora_entrega,total,saldo_pendiente,notas,sincronizado_en");
+
+        foreach (var p in pedidos)
+        {
+            var cliente = $"{p.Customer?.Nombre} {p.Customer?.Apellido}".Trim();
+            sb.AppendLine(string.Join(",",
+                p.Id,
+                Escapar(p.IdLocalOffline?.ToString() ?? ""),
+                Escapar(cliente),
+                Escapar(p.TipoPedido),
+                Escapar(p.Canal),
+                Escapar(p.EstadoPedido),
+                p.FechaCreacion.ToString("yyyy-MM-dd HH:mm:ss"),
+                p.FechaEntrega.ToString("yyyy-MM-dd"),
+                p.HoraEntrega?.ToString() ?? "",
+                p.Total.ToString("F2"),
+                p.SaldoPendiente.ToString("F2"),
+                Escapar(p.Notas ?? ""),
+                p.SincronizadoEn?.ToString("yyyy-MM-dd HH:mm:ss") ?? ""
+            ));
+        }
+
+        sw.Stop();
+        _logger.LogInformation("Exportados {Count} pedidos en {Ms} ms", pedidos.Count, sw.ElapsedMilliseconds);
+        return (Encoding.UTF8.GetBytes(sb.ToString()), $"pedidos_{DateTime.Now:yyyyMMdd_HHmm}.csv");
+    }
+
+    // ── Exportar Clientes ─────────────────────────────────────────
+    public async Task<(byte[] Contenido, string NombreArchivo)> ExportarClientesAsync()
+    {
+        var sw = Stopwatch.StartNew();
+        var clientes = await _context.Customers
+            .OrderBy(c => c.CreadoEn)
+            .ToListAsync();
+
+        var sb = new StringBuilder();
+        sb.AppendLine("id,tipo_cliente,nombre,apellido,telefono,correo,sexo,fecha_nacimiento,rfc,razon_social,cp_fiscal,regimen_fiscal,creado_en");
+
+        foreach (var c in clientes)
+        {
+            sb.AppendLine(string.Join(",",
+                c.Id,
+                Escapar(c.TipoCliente),
+                Escapar(c.Nombre),
+                Escapar(c.Apellido ?? ""),
+                Escapar(c.Telefono),
+                Escapar(c.Correo ?? ""),
+                Escapar(c.Sexo ?? ""),
+                c.FechaNacimiento?.ToString("yyyy-MM-dd") ?? "",
+                Escapar(c.Rfc ?? ""),
+                Escapar(c.RazonSocial ?? ""),
+                Escapar(c.CpFiscal ?? ""),
+                Escapar(c.RegimenFiscal ?? ""),
+                c.CreadoEn.ToString("yyyy-MM-dd HH:mm:ss")
+            ));
+        }
+
+        sw.Stop();
+        _logger.LogInformation("Exportados {Count} clientes en {Ms} ms", clientes.Count, sw.ElapsedMilliseconds);
+        return (Encoding.UTF8.GetBytes(sb.ToString()), $"clientes_{DateTime.Now:yyyyMMdd_HHmm}.csv");
     }
 }

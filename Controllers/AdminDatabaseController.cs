@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
+[Tags("Administrador")]
 [Route("api/admin/database")]
 [Authorize(Roles = "ADMIN")]
 public class AdminDatabaseController : ControllerBase

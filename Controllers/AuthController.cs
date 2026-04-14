@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
+[Tags("Público")]
 [Route("api/auth")]
 public class AuthController : ControllerBase
 {

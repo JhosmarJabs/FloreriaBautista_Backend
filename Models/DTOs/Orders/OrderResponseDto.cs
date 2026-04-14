@@ -9,6 +9,7 @@ public class OrderResponseDto
     public DateOnly FechaEntrega   { get; set; }
     public TimeOnly? HoraEntrega   { get; set; }
     public decimal  Total          { get; set; }
+    public decimal? CostoEnvio     { get; set; }
     public decimal  SaldoPendiente { get; set; }
     public string?  Notas          { get; set; }
     public string   NombreCliente  { get; set; } = string.Empty;

@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
+[Tags("Desarrollo")]
 [Route("api/dev")]
 public class DevController : ControllerBase
 {
@@ -32,9 +33,9 @@ public class DevController : ControllerBase
 
         var claims = new[]
         {
-            new Claim(JwtRegisteredClaimNames.Sub,   "00000000-0000-0000-0000-000000000001"),
+            new Claim(JwtRegisteredClaimNames.Sub,   "00000001-0000-0000-0000-000000000001"), 
             new Claim(JwtRegisteredClaimNames.Email, "admin@floreriabautista.com"),
-            new Claim(ClaimTypes.NameIdentifier,     "00000000-0000-0000-0000-000000000001"),
+            new Claim(ClaimTypes.NameIdentifier,     "00000001-0000-0000-0000-000000000001"),
             new Claim(ClaimTypes.Role,               "ADMIN"),
         };
 

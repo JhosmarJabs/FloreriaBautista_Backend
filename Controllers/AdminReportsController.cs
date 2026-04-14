@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
+[Tags("Reportes")]
 [Route("api/admin/reports")]
 [Authorize(Roles = "ADMIN")]
 public class AdminReportsController : ControllerBase
@@ -55,5 +56,13 @@ public class AdminReportsController : ControllerBase
     {
         var reporte = await _reportsService.ReporteInventarioAsync();
         return Ok(ApiResponseDto<InventoryReportDto>.Ok(reporte));
+    }
+
+    // GET /api/admin/reports/dashboard
+    [HttpGet("dashboard")]
+    public async Task<IActionResult> Dashboard()
+    {
+        var stats = await _reportsService.ObtenerDashboardStatsAsync();
+        return Ok(ApiResponseDto<DashboardStatsDto>.Ok(stats));
     }
 }

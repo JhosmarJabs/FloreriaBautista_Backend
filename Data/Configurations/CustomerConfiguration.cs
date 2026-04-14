@@ -17,8 +17,14 @@ public class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.Property(c => c.Telefono).HasMaxLength(20).IsRequired();
         builder.Property(c => c.Correo).HasMaxLength(150);
         builder.Property(c => c.Sexo).HasMaxLength(10);
-        builder.HasIndex(c => c.UserId).IsUnique();
+        builder.Property(c => c.Rfc).HasMaxLength(15);
+        builder.Property(c => c.RazonSocial).HasMaxLength(150);
+        builder.Property(c => c.CpFiscal).HasMaxLength(10);
+        builder.Property(c => c.RegimenFiscal).HasMaxLength(50);
         builder.Property(c => c.CreadoEn).HasDefaultValueSql("NOW()");
+
+        builder.HasIndex(c => c.Telefono);
+        builder.HasIndex(c => c.UserId).HasFilter("user_id IS NOT NULL");
 
         builder.HasMany(c => c.Addresses)
                .WithOne(a => a.Customer)

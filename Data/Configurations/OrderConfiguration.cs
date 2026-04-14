@@ -11,6 +11,8 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.ToTable("orders");
         builder.HasKey(o => o.Id);
         builder.Property(o => o.Id).HasDefaultValueSql("gen_random_uuid()");
+        builder.Property(o => o.IdLocalOffline).HasColumnName("id_local_offline");
+        builder.HasIndex(o => o.IdLocalOffline).IsUnique().HasFilter("id_local_offline IS NOT NULL");
         builder.Property(o => o.TipoPedido).HasMaxLength(20).IsRequired();
         builder.Property(o => o.Canal).HasMaxLength(20).IsRequired();
         builder.Property(o => o.EstadoPedido).HasMaxLength(30).HasDefaultValue("PENDIENTE_VALIDACION");
@@ -20,6 +22,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.DireccionEntregaEstado).HasMaxLength(100).IsRequired();
         builder.Property(o => o.DireccionEntregaCp).HasMaxLength(10);
         builder.Property(o => o.DireccionEntregaReferencias).HasMaxLength(255);
+        builder.Property(o => o.CostoEnvio).HasColumnType("numeric(10,2)");
         builder.Property(o => o.Total).HasColumnType("numeric(10,2)").HasDefaultValue(0);
         builder.Property(o => o.SaldoPendiente).HasColumnType("numeric(10,2)").HasDefaultValue(0);
         builder.Property(o => o.FechaCreacion).HasDefaultValueSql("NOW()");

@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
+[Tags("Administrador")]
 [Route("api/admin/scheduler")]
 [Authorize(Roles = "ADMIN")]
 public class AdminSchedulerController : ControllerBase

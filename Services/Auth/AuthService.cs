@@ -65,8 +65,7 @@ public class AuthService : IAuthService
         {
             Id               = Guid.NewGuid(),
             Nombre           = request.Nombre.Trim(),
-            ApellidoP        = request.ApellidoP.Trim(),
-            ApellidoM        = request.ApellidoM?.Trim(),
+            Apellido         = request.Apellido.Trim(),
             Correo           = request.Correo.ToLower().Trim(),
             Telefono         = request.Telefono,
             PasswordHash     = BCrypt.Net.BCrypt.HashPassword(request.Contrasena),
@@ -202,9 +201,8 @@ public class AuthService : IAuthService
             .FirstOrDefaultAsync(u => u.Id == userId)
             ?? throw new NotFoundException("Usuario", userId);
 
-        if (!string.IsNullOrWhiteSpace(request.Nombre))   user.Nombre  = request.Nombre.Trim();
-        if (!string.IsNullOrWhiteSpace(request.ApellidoP)) user.ApellidoP = request.ApellidoP.Trim();
-        if (!string.IsNullOrWhiteSpace(request.ApellidoM)) user.ApellidoM = request.ApellidoM.Trim();
+        if (!string.IsNullOrWhiteSpace(request.Nombre))   user.Nombre   = request.Nombre.Trim();
+        if (!string.IsNullOrWhiteSpace(request.Apellido)) user.Apellido = request.Apellido.Trim();
         if (!string.IsNullOrWhiteSpace(request.Telefono)) user.Telefono = request.Telefono.Trim();
         if (!string.IsNullOrWhiteSpace(request.Sexo))     user.Sexo     = request.Sexo.Trim();
         if (request.FechaNacimiento.HasValue)
@@ -271,8 +269,8 @@ public class AuthService : IAuthService
             Usuario = new UsuarioDto
             {
                 Id     = user.Id,
-                Nombre = $"{user.Nombre} {user.ApellidoP}".Trim(),
-                Correo = user.Correo,
+                Nombre = $"{user.Nombre} {user.Apellido}".Trim(),
+                Correo = user.Correo ?? "",
                 Roles  = roles
             }
         };
@@ -281,8 +279,7 @@ public class AuthService : IAuthService
     {
         Id               = user.Id,
         Nombre           = user.Nombre,
-        ApellidoP        = user.ApellidoP,
-        ApellidoM        = user.ApellidoM,
+        Apellido         = user.Apellido,
         Correo           = user.Correo,
         Telefono         = user.Telefono,
         Sexo             = user.Sexo,

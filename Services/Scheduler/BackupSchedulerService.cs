@@ -74,6 +74,14 @@ public class BackupSchedulerService : BackgroundService
 
             await audit.RegistrarAsync("BACKUP_AUTOMATICO", "BackupJob", resultado.Id.ToString(), null,
                 new { resultado.RutaArchivoLocal, resultado.Estado, resultado.SubidoADrive, Config.Frecuencia });
+
+            // ── Limpieza: mantener máx. 10 copias full ─────────────
+            if (resultado.Estado == "COMPLETADO")
+            {
+                var eliminados = await backupService.LimpiarBackupsAntiguosAsync(maxCopias: 10);
+                if (eliminados > 0)
+                    _logger.LogInformation("Limpieza post-backup: {N} backup(s) antiguo(s) eliminado(s).", eliminados);
+            }
         }
         catch (Exception ex) { _logger.LogError(ex, "Error en backup automático"); }
     }

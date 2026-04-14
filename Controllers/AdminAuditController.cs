@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
+[Tags("Administrador")]
 [Route("api/admin/audit")]
 [Authorize(Roles = "ADMIN")]
 public class AdminAuditController : ControllerBase
@@ -57,7 +58,7 @@ public class AdminAuditController : ControllerBase
             {
                 Id            = a.Id,
                 UsuarioId     = a.UsuarioId,
-                UsuarioNombre = a.Usuario != null ? $"{a.Usuario.Nombre} {a.Usuario.ApellidoP}" : null,
+                UsuarioNombre = a.Usuario != null ? $"{a.Usuario.Nombre} {a.Usuario.Apellido}" : null,
                 UsuarioCorreo = a.Usuario != null ? a.Usuario.Correo : null,
                 Accion        = a.Accion,
                 Entidad       = a.Entidad,
@@ -91,7 +92,7 @@ public class AdminAuditController : ControllerBase
             {
                 Id            = a.Id,
                 UsuarioId     = a.UsuarioId,
-                UsuarioNombre = a.Usuario != null ? $"{a.Usuario.Nombre} {a.Usuario.ApellidoP}" : null,
+                UsuarioNombre = a.Usuario != null ? $"{a.Usuario.Nombre} {a.Usuario.Apellido}" : null,
                 UsuarioCorreo = a.Usuario != null ? a.Usuario.Correo : null,
                 Accion        = a.Accion,
                 Entidad       = a.Entidad,

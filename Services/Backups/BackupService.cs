@@ -195,6 +195,65 @@ public class BackupService : IBackupService
                 : null);
     }
 
+    // ── Limpieza automática: máximo N copias ──────────────────────
+    /// <summary>
+    /// Mantiene solo los últimos <paramref name="maxCopias"/> backups COMPLETADOS de tipo "BD" (full).
+    /// Si hay más, elimina los más antiguos de la BD local y de Google Drive.
+    /// Retorna el número de backups eliminados.
+    /// </summary>
+    public async Task<int> LimpiarBackupsAntiguosAsync(int maxCopias = 10)
+    {
+        // Solo aplica a backups full completados
+        var todosCompletos = await _context.BackupJobs
+            .Where(j => j.Tipo == "BD" && j.Estado == "COMPLETADO")
+            .OrderByDescending(j => j.CreadoEn)
+            .ToListAsync();
+
+        if (todosCompletos.Count <= maxCopias)
+        {
+            _logger.LogInformation(
+                "Limpieza de backups: {Actual}/{Max} — no se requiere eliminar.", 
+                todosCompletos.Count, maxCopias);
+            return 0;
+        }
+
+        var aEliminar = todosCompletos.Skip(maxCopias).ToList();
+        int eliminados = 0;
+
+        foreach (var job in aEliminar)
+        {
+            // 1. Intentar borrar de Google Drive si tiene FileId
+            if (!string.IsNullOrEmpty(job.DriveFileId))
+            {
+                try
+                {
+                    await _driveService.EliminarArchivoAsync(job.DriveFileId);
+                    _logger.LogInformation(
+                        "Backup eliminado de Drive. ID: {DriveId} | Backup: {BackupId}", 
+                        job.DriveFileId, job.Id);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "No se pudo eliminar el archivo de Drive ({DriveId}). Se eliminará solo el registro de BD.",
+                        job.DriveFileId);
+                }
+            }
+
+            // 2. Eliminar registro de BD
+            _context.BackupJobs.Remove(job);
+            eliminados++;
+        }
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Limpieza completada: {Eliminados} backup(s) eliminado(s). Quedan {Restantes}/{Max}.",
+            eliminados, maxCopias, maxCopias);
+
+        return eliminados;
+    }
+
     // ── Mapeo ─────────────────────────────────────────────────────
     private static BackupResponseDto MapToDto(BackupJob job, string? driveEnlace) => new()
     {

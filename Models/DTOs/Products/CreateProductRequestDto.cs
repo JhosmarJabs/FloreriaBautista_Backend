@@ -11,7 +11,9 @@ public class CreateProductRequestDto
     [Required] public string  Tipo             { get; set; } = string.Empty;
     public bool               EsPersonalizable { get; set; } = false;
     public string             Estado           { get; set; } = "ACTIVO";
+    public string             Visibilidad      { get; set; } = "AMBOS";
     public string?            ImagenUrl        { get; set; }
     public List<string>       Categorias       { get; set; } = [];
     public List<string>       Colecciones      { get; set; } = [];
+    public List<ProductRecipeRequestDto> Receta { get; set; } = [];
 }

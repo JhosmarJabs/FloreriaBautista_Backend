@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
+[Tags("Administrador")]
 [Route("api/admin/products")]
 [Authorize(Roles = "ADMIN")]
 public class AdminProductsController : ControllerBase
@@ -26,6 +27,14 @@ public class AdminProductsController : ControllerBase
         return Ok(ApiResponseDto<PagedResultDto<ProductSummaryDto>>.Ok(resultado));
     }
 
+    // GET /api/admin/products/{productId}
+    [HttpGet("{productId:guid}")]
+    public async Task<IActionResult> Detalle(Guid productId)
+    {
+        var producto = await _productService.ObtenerAdminAsync(productId);
+        return Ok(ApiResponseDto<ProductResponseDto>.Ok(producto));
+    }
+
     // POST /api/admin/products
     [HttpPost]
     public async Task<IActionResult> Crear([FromBody] CreateProductRequestDto request)
@@ -41,4 +50,6 @@ public class AdminProductsController : ControllerBase
         var producto = await _productService.ActualizarAsync(productId, request);
         return Ok(ApiResponseDto<ProductResponseDto>.Ok(producto, "Producto actualizado correctamente."));
     }
+
 }
+

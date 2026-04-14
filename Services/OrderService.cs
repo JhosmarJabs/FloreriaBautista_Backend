@@ -16,13 +16,12 @@ public class OrderService : IOrderService
     // Estados válidos y sus transiciones permitidas
     private static readonly Dictionary<string, List<string>> Transiciones = new()
     {
-        ["PENDIENTE_VALIDACION"] = ["VALIDADO", "CANCELADO"],
-        ["VALIDADO"]             = ["EN_PROCESO", "CANCELADO"],
-        ["EN_PROCESO"]           = ["LISTO", "CANCELADO"],
-        ["LISTO"]                = ["EN_CAMINO", "ENTREGADO"],
-        ["EN_CAMINO"]            = ["ENTREGADO"],
+        ["PENDIENTE_VALIDACION"] = ["EN_PREPARACION", "CANCELADO", "PENDIENTE_ANULACION"],
+        ["EN_PREPARACION"]       = ["EN_RUTA", "CANCELADO", "PENDIENTE_ANULACION"],
+        ["EN_RUTA"]              = ["ENTREGADO", "PENDIENTE_ANULACION"],
         ["ENTREGADO"]            = [],
-        ["CANCELADO"]            = []
+        ["CANCELADO"]            = [],
+        ["PENDIENTE_ANULACION"]  = ["CANCELADO", "EN_PREPARACION"]
     };
 
     public OrderService(AppDbContext context, ILogger<OrderService> logger)
@@ -237,6 +236,7 @@ public class OrderService : IOrderService
         FechaEntrega   = o.FechaEntrega,
         HoraEntrega    = o.HoraEntrega,
         Total          = o.Total,
+        CostoEnvio     = o.CostoEnvio,
         SaldoPendiente = o.SaldoPendiente,
         Notas          = o.Notas,
         NombreCliente  = o.Customer?.Nombre ?? "",

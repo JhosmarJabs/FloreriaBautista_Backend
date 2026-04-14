@@ -35,16 +35,26 @@ public class TopCustomerDto
 
 public class InventoryReportDto
 {
-    public int                TotalProductos     { get; set; }
-    public int                ProductosBajoStock { get; set; }
-    public int                ProductosSinStock  { get; set; }
-    public List<LowStockDto>  BajoStock          { get; set; } = [];
+    public int                TotalInsumos     { get; set; }
+    public int                InsumosBajoStock { get; set; }
+    public int                InsumosSinStock  { get; set; }
+    public List<LowStockDto>  BajoStock        { get; set; } = [];
 }
 
 public class LowStockDto
 {
-    public Guid   ProductId   { get; set; }
+    public Guid   ItemId      { get; set; }
     public string Nombre      { get; set; } = string.Empty;
     public int    StockActual { get; set; }
     public int    StockMinimo { get; set; }
+}
+
+public class DashboardStatsDto
+{
+    public decimal            TotalSales        { get; set; }
+    public int                OrderCount        { get; set; }
+    public decimal            AverageTicket     { get; set; }
+    public int                NewCustomers      { get; set; }
+    public List<DailySaleDto> WeeklySales       { get; set; } = [];
+    public List<LowStockDto>  CriticalInventory { get; set; } = [];
 }

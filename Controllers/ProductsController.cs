@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
+[Tags("Público")]
 [Route("api/products")]
 public class ProductsController : ControllerBase
 {

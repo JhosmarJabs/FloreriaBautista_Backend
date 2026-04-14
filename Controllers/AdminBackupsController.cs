@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
+[Tags("Administrador")]
 [Route("api/admin/backups")]
 [Authorize(Roles = "ADMIN")]
 public class AdminBackupsController : ControllerBase
@@ -42,6 +43,14 @@ public class AdminBackupsController : ControllerBase
             return Ok(ApiResponseDto<List<DriveFileDto>>.Ok(
                 [], $"Google Drive no disponible: {ex.Message}"));
         }
+    }
+
+    // GET /api/admin/backups/tablas — lista tablas disponibles para backup parcial
+    [HttpGet("tablas")]
+    public async Task<IActionResult> ListarTablas()
+    {
+        var tablas = await _backupService.ObtenerTablasAsync();
+        return Ok(ApiResponseDto<List<string>>.Ok(tablas));
     }
 
     // POST /api/admin/backups/full — backup completo, sube a Drive automáticamente

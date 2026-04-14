@@ -122,6 +122,15 @@ public class GoogleDriveService
         }).ToList();
     }
 
+    // ── Eliminar archivo de Drive ─────────────────────────────────
+    public async Task EliminarArchivoAsync(string fileId)
+    {
+        var drive   = await CrearDriveServiceAsync();
+        var request = drive.Files.Delete(fileId);
+        await request.ExecuteAsync();
+        _logger.LogInformation("Archivo eliminado de Drive. ID: {Id}", fileId);
+    }
+
     // ── Crear cliente OAuth2 ──────────────────────────────────────
     // Las credenciales se leen desde variables de entorno — no se necesita el archivo JSON
     private static async Task<DriveService> CrearDriveServiceAsync()

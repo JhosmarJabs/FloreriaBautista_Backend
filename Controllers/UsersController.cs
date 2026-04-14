@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
+[Tags("Privado o Cliente")]
 [Route("api/users")]
 [Authorize]
 public class UsersController : ControllerBase

@@ -34,6 +34,36 @@ public static class SwaggerExtensions
                 },
                 Array.Empty<string>()
             }});
+
+            // Ordenar por grupo de acceso definido y luego por método
+            c.OrderActionsBy(api =>
+            {
+                var tag = api.ActionDescriptor.EndpointMetadata
+                    .OfType<Microsoft.AspNetCore.Http.TagsAttribute>()
+                    .FirstOrDefault()?.Tags.FirstOrDefault() ?? "Público";
+
+                var tagOrder = tag switch
+                {
+                    "Público"            => "1",
+                    "Privado o Cliente"  => "2",
+                    "Administrador"      => "3",
+                    "Desarrollo"         => "4",
+                    "Reportes"           => "5",
+                    _                    => "9"
+                };
+
+                var methodOrder = (api.HttpMethod?.ToUpper()) switch
+                {
+                    "GET"    => "0",
+                    "POST"   => "1",
+                    "PUT"    => "2",
+                    "PATCH"  => "3",
+                    "DELETE" => "4",
+                    _        => "9"
+                };
+
+                return $"{tagOrder}_{methodOrder}_{api.RelativePath}";
+            });
         });
 
         return services;

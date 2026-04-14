@@ -37,27 +37,22 @@ public class AppDbContext : DbContext
     // ── Inventario ─────────────────────────────────────────────────
     public DbSet<InventoryItem>     InventoryItems     => Set<InventoryItem>();
     public DbSet<InventoryMovement> InventoryMovements => Set<InventoryMovement>();
-
-    // ── Flores (materia prima interna) ────────────────────────────────
-    public DbSet<Flower>         Flowers         => Set<Flower>();
-    public DbSet<FlowerMovement> FlowerMovements => Set<FlowerMovement>();
-    public DbSet<ProductFlower>  ProductFlowers  => Set<ProductFlower>();
+    public DbSet<ProductRecipe>     ProductRecipes     => Set<ProductRecipe>();
 
     // ── Operación técnica ──────────────────────────────────────────
-    public DbSet<BackupJob>        BackupJobs        => Set<BackupJob>();
-    public DbSet<ImportJob>        ImportJobs        => Set<ImportJob>();
-    public DbSet<AuditLog>         AuditLogs         => Set<AuditLog>();
-    public DbSet<SchedulerSettings> SchedulerSettings => Set<SchedulerSettings>();
+    public DbSet<BackupJob>         BackupJobs         => Set<BackupJob>();
+    public DbSet<ImportJob>         ImportJobs         => Set<ImportJob>();
+    public DbSet<AuditLog>          AuditLogs          => Set<AuditLog>();
+    public DbSet<SchedulerSettings> SchedulerSettings  => Set<SchedulerSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        // Carga todas las IEntityTypeConfiguration<T> — cada entidad tiene su archivo en Configurations/
         modelBuilder.HasDefaultSchema("public");
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
 
-        // Claves compuestas de tablas N:M (no tienen archivo de configuración propio)
+        // Claves compuestas de tablas N:M
         modelBuilder.Entity<UserRole>(e => {
             e.ToTable("user_roles");
             e.HasKey(ur => new { ur.UserId, ur.RoleId });
@@ -71,11 +66,6 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<ProductCollection>(e => {
             e.ToTable("product_collections");
             e.HasKey(pc => new { pc.ProductId, pc.CollectionId });
-        });
-
-        modelBuilder.Entity<ProductFlower>(e => {
-            e.ToTable("product_flowers");
-            e.HasKey(pf => new { pf.ProductId, pf.FlowerId });
         });
 
         modelBuilder.Entity<ProductCustomizationOption>(e => {

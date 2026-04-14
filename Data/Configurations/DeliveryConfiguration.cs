@@ -10,7 +10,10 @@ public class DeliveryConfiguration : IEntityTypeConfiguration<Delivery>
     {
         builder.ToTable("deliveries");
         builder.HasKey(d => d.Id);
+        builder.Property(d => d.Id).HasDefaultValueSql("gen_random_uuid()");
         builder.Property(d => d.EstadoEntrega).HasMaxLength(30).IsRequired();
-        builder.Property(d => d.Notas).HasMaxLength(500);
+        builder.Property(d => d.EvidenciaFotografica).HasMaxLength(500);
+        builder.Property(d => d.FirmaReceptor).HasMaxLength(500);
+        builder.Property(d => d.Notas);
     }
 }

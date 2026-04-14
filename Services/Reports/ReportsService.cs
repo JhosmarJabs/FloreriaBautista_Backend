@@ -101,28 +101,84 @@ public class ReportsService
     // ── Inventario ────────────────────────────────────────────────
     public async Task<InventoryReportDto> ReporteInventarioAsync()
     {
-        var items = await _context.InventoryItems
-            .Include(i => i.Product)
-            .Where(i => i.Product.Estado == "ACTIVO")
-            .ToListAsync();
+        var items = await _context.InventoryItems.ToListAsync();
 
         var bajoStock = items.Where(i => i.StockActual <= i.StockMinimo && i.StockActual > 0).ToList();
         var sinStock  = items.Where(i => i.StockActual == 0).ToList();
 
         return new InventoryReportDto
         {
-            TotalProductos     = items.Count,
-            ProductosBajoStock = bajoStock.Count,
-            ProductosSinStock  = sinStock.Count,
+            TotalInsumos       = items.Count,
+            InsumosBajoStock   = bajoStock.Count,
+            InsumosSinStock    = sinStock.Count,
             BajoStock = bajoStock.Concat(sinStock)
                 .OrderBy(i => i.StockActual)
                 .Select(i => new LowStockDto
                 {
-                    ProductId   = i.ProductId,
-                    Nombre      = i.Product.Nombre,
+                    ItemId      = i.Id,
+                    Nombre      = i.Nombre,
                     StockActual = i.StockActual,
                     StockMinimo = i.StockMinimo
                 }).ToList()
+        };
+    }
+
+    // ── Dashboard ─────────────────────────────────────────────────
+    public async Task<DashboardStatsDto> ObtenerDashboardStatsAsync()
+    {
+        var hoy   = DateOnly.FromDateTime(DateTime.UtcNow);
+        var semanaPasada = hoy.AddDays(-7);
+
+        // 1. Pedidos (últimos 30 días para KPIs generales)
+        var inicioMes = hoy.AddDays(-30);
+        var pedidosMes = await _context.Orders
+            .Where(o => o.FechaEntrega >= inicioMes && o.EstadoPedido != "CANCELADO")
+            .ToListAsync();
+
+        var totalSales  = pedidosMes.Sum(o => o.Total);
+        var orderCount  = pedidosMes.Count;
+        var avgTicket   = orderCount > 0 ? totalSales / orderCount : 0;
+
+        // 2. Nuevos clientes (últimos 7 días)
+        var newCustomers = await _context.Users
+            .Where(u => u.CreadoEn >= DateTime.UtcNow.AddDays(-7))
+            .CountAsync();
+
+        // 3. Ventas semanales (para la gráfica)
+        var deHoyParaAtras = await _context.Orders
+            .Where(o => o.FechaEntrega >= semanaPasada && o.EstadoPedido != "CANCELADO")
+            .GroupBy(o => o.FechaEntrega)
+            .Select(g => new DailySaleDto
+            {
+                Fecha   = g.Key,
+                Pedidos = g.Count(),
+                Total   = g.Sum(o => o.Total)
+            })
+            .OrderBy(d => d.Fecha)
+            .ToListAsync();
+
+        // 4. Inventario crítico
+        var criticalInventory = await _context.InventoryItems
+            .Where(i => i.Activo && i.StockActual <= i.StockMinimo)
+            .OrderBy(i => i.StockActual)
+            .Take(10)
+            .Select(i => new LowStockDto
+            {
+                ItemId      = i.Id,
+                Nombre      = i.Nombre,
+                StockActual = i.StockActual,
+                StockMinimo = i.StockMinimo
+            })
+            .ToListAsync();
+
+        return new DashboardStatsDto
+        {
+            TotalSales        = totalSales,
+            OrderCount        = orderCount,
+            AverageTicket     = avgTicket,
+            NewCustomers      = newCustomers,
+            WeeklySales       = deHoyParaAtras,
+            CriticalInventory = criticalInventory
         };
     }
 }

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
+[Tags("Privado o Cliente")]
 [Route("api/orders")]
 [Authorize]
 public class OrdersController : ControllerBase
@@ -26,7 +27,7 @@ public class OrdersController : ControllerBase
 
     // POST /api/orders/physical
     [HttpPost("physical")]
-    [Authorize(Roles = "ADMIN,VENTAS")]
+    [Authorize(Roles = "ADMIN,EMPLEADO")]
     public async Task<IActionResult> CrearFisico([FromBody] CreatePhysicalOrderRequestDto request)
     {
         var order = await _orderService.CrearPedidoFisicoAsync(request);
@@ -55,7 +56,7 @@ public class OrdersController : ControllerBase
 
     // POST /api/orders/{orderId}/status
     [HttpPost("{orderId:guid}/status")]
-    [Authorize(Roles = "ADMIN,VENTAS,ENTREGAS")]
+    [Authorize(Roles = "ADMIN,EMPLEADO")]
     public async Task<IActionResult> CambiarEstado(Guid orderId, [FromBody] UpdateOrderStatusRequestDto request)
     {
         var roles = User.FindAll(System.Security.Claims.ClaimTypes.Role)

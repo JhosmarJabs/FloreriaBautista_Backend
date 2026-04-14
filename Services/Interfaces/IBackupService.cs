@@ -21,4 +21,10 @@ public interface IBackupService
 
     /// <summary>Obtiene el detalle de un respaldo por su Id.</summary>
     Task<BackupResponseDto> ObtenerBackupAsync(Guid id);
+
+    /// <summary>
+    /// Elimina los backups más antiguos cuando la cantidad supera <paramref name="maxCopias"/>.
+    /// Retorna el número de registros eliminados.
+    /// </summary>
+    Task<int> LimpiarBackupsAntiguosAsync(int maxCopias = 10);
 }

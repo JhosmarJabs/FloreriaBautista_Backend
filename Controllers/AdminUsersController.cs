@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
+[Tags("Administrador")]
 [Route("api/admin/users")]
 [Authorize(Roles = "ADMIN")]
 public class AdminUsersController : ControllerBase
@@ -33,8 +34,7 @@ public class AdminUsersController : ControllerBase
         {
             Id               = Guid.NewGuid(),
             Nombre           = request.Nombre.Trim(),
-            ApellidoP        = request.ApellidoP.Trim(),
-            ApellidoM        = request.ApellidoM?.Trim(),
+            Apellido         = request.Apellido.Trim(),
             Correo           = request.Correo.ToLower().Trim(),
             Telefono         = request.Telefono,
             PasswordHash     = BCrypt.Net.BCrypt.HashPassword(request.Password),
@@ -54,8 +54,7 @@ public class AdminUsersController : ControllerBase
         {
             Id       = user.Id,
             Nombre   = user.Nombre,
-            ApellidoP = user.ApellidoP,
-            ApellidoM = user.ApellidoM,
+            Apellido = user.Apellido,
             Correo   = user.Correo,
             Telefono = user.Telefono,
             Estado   = user.Estado,
@@ -80,8 +79,8 @@ public class AdminUsersController : ControllerBase
         if (!string.IsNullOrWhiteSpace(busqueda))
             query = query.Where(u =>
                 u.Nombre.Contains(busqueda) ||
-                u.ApellidoP.Contains(busqueda) ||
-                u.Correo.Contains(busqueda));
+                u.Apellido.Contains(busqueda) ||
+                (u.Correo != null && u.Correo.Contains(busqueda)));
 
         if (!string.IsNullOrWhiteSpace(rol))
             query = query.Where(u =>
@@ -99,8 +98,7 @@ public class AdminUsersController : ControllerBase
             {
                 Id               = u.Id,
                 Nombre           = u.Nombre,
-                ApellidoP        = u.ApellidoP,
-                ApellidoM        = u.ApellidoM,
+                Apellido         = u.Apellido,
                 Correo           = u.Correo,
                 Telefono         = u.Telefono,
                 Sexo             = u.Sexo,
@@ -137,8 +135,7 @@ public class AdminUsersController : ControllerBase
         {
             Id               = user.Id,
             Nombre           = user.Nombre,
-            ApellidoP        = user.ApellidoP,
-            ApellidoM        = user.ApellidoM,
+            Apellido         = user.Apellido,
             Correo           = user.Correo,
             Telefono         = user.Telefono,
             Sexo             = user.Sexo,

@@ -8,5 +8,6 @@ public class ProductSummaryDto
     public string  Tipo      { get; set; } = string.Empty;
     public string  Estado    { get; set; } = string.Empty;
     public string? ImagenUrl { get; set; }
+    public bool    Activo    { get; set; }
     public int?    Stock     { get; set; }
 }

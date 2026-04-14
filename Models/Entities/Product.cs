@@ -9,16 +9,14 @@ public class Product
     public string   Tipo             { get; set; } = string.Empty;
     public bool     EsPersonalizable { get; set; } = false;
     public string   Estado           { get; set; } = "ACTIVO";
+    public string   Visibilidad      { get; set; } = "AMBOS"; // WEB / SOLO_SUCURSAL / AMBOS
     public string?  ImagenUrl        { get; set; }
-    public decimal  CostoBase        { get; set; } = 0;
-    public decimal  MargenFactor     { get; set; } = 2.5m;
-    public decimal  PrecioSugerido   { get; set; } = 0;
+    public bool     Activo           { get; set; } = true;
     public DateTime CreadoEn        { get; set; } = DateTime.UtcNow;
 
     public ICollection<ProductCategory>            ProductCategories            { get; set; } = [];
     public ICollection<ProductCollection>          ProductCollections           { get; set; } = [];
     public ICollection<ProductCustomizationOption> ProductCustomizationOptions  { get; set; } = [];
     public ICollection<OrderItem>                  OrderItems                   { get; set; } = [];
-    public InventoryItem?                          InventoryItem                { get; set; }
-    public ICollection<ProductFlower>              ProductFlowers               { get; set; } = [];
+    public ICollection<ProductRecipe>              ProductRecipes               { get; set; } = [];
 }

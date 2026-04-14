@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
+[Tags("Administrador")]
 [Authorize(Roles = "ADMIN")]
 public class AdminImportExportController : ControllerBase
 {
@@ -17,6 +18,14 @@ public class AdminImportExportController : ControllerBase
     {
         _exportService = exportService;
         _importService = importService;
+    }
+
+    // GET /api/admin/import-jobs
+    [HttpGet("api/admin/import-jobs")]
+    public async Task<IActionResult> ObtenerHistorialImportaciones()
+    {
+        var historial = await _importService.ObtenerHistorialAsync();
+        return Ok(ApiResponseDto<List<FloreriaBautista.Models.Entities.ImportJob>>.Ok(historial));
     }
 
     // GET /api/admin/export/products
@@ -35,9 +44,25 @@ public class AdminImportExportController : ControllerBase
         return File(contenido, "text/csv; charset=utf-8", nombre);
     }
 
+    // GET /api/admin/export/orders
+    [HttpGet("api/admin/export/orders")]
+    public async Task<IActionResult> ExportarPedidos()
+    {
+        var (contenido, nombre) = await _exportService.ExportarPedidosAsync();
+        return File(contenido, "text/csv; charset=utf-8", nombre);
+    }
+
+    // GET /api/admin/export/customers
+    [HttpGet("api/admin/export/customers")]
+    public async Task<IActionResult> ExportarClientes()
+    {
+        var (contenido, nombre) = await _exportService.ExportarClientesAsync();
+        return File(contenido, "text/csv; charset=utf-8", nombre);
+    }
+
     // POST /api/admin/import/products
     [HttpPost("api/admin/import/products")]
-    [RequestSizeLimit(10 * 1024 * 1024)] // 10 MB máximo
+    [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> ImportarProductos(IFormFile archivo)
     {
         if (archivo == null || archivo.Length == 0)
@@ -69,31 +94,5 @@ public class AdminImportExportController : ControllerBase
 
         return Ok(ApiResponseDto<ImportResultDto>.Ok(resultado,
             $"Importación completada: {resultado.Insertados} insertados, {resultado.Actualizados} actualizados, {resultado.Errores} errores."));
-    }
-
-    // GET /api/admin/export/flowers
-    [HttpGet("api/admin/export/flowers")]
-    public async Task<IActionResult> ExportarFlores()
-    {
-        var (contenido, nombre) = await _exportService.ExportarFloresAsync();
-        return File(contenido, "text/csv; charset=utf-8", nombre);
-    }
-
-    // POST /api/admin/import/flowers
-    [HttpPost("api/admin/import/flowers")]
-    [RequestSizeLimit(10 * 1024 * 1024)]
-    public async Task<IActionResult> ImportarFlores(IFormFile archivo)
-    {
-        if (archivo == null || archivo.Length == 0)
-            return BadRequest(ApiResponseDto<object>.Fail("No se recibió ningún archivo."));
-
-        if (!archivo.FileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
-            return BadRequest(ApiResponseDto<object>.Fail("Solo se aceptan archivos .csv"));
-
-        await using var stream = archivo.OpenReadStream();
-        var resultado = await _importService.ImportarFloresAsync(stream, archivo.FileName);
-
-        return Ok(ApiResponseDto<ImportResultDto>.Ok(resultado,
-            $"Importación completada: {resultado.Insertados} insertadas, {resultado.Actualizados} actualizadas, {resultado.Errores} errores."));
     }
 }
