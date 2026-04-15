@@ -23,14 +23,15 @@ public class ExportService : IExportService
     {
         var sw = Stopwatch.StartNew();
 
-        var productos = await _context.Products
-            .Include(p => p.ProductCategories).ThenInclude(pc => pc.Category)
+        var productos = await _context.Products.Include(p => p.ProductCategories).ThenInclude(pc => pc.Category)
             .Include(p => p.ProductCollections).ThenInclude(pc => pc.Collection)
             .OrderBy(p => p.Nombre)
             .ToListAsync();
 
         var sb = new StringBuilder();
-        sb.AppendLine("id,nombre,descripcion,precio_base,tipo,es_personalizable,estado,visibilidad,imagen_url,categorias,colecciones,creado_en");
+        sb.AppendLine(
+            "nombre,descripcion,precio_base,tipo,es_personalizable,estado,visibilidad,categorias,colecciones,creado_en"
+        );
 
         foreach (var p in productos)
         {
@@ -38,7 +39,6 @@ public class ExportService : IExportService
             var colecciones = string.Join("|", p.ProductCollections.Select(pc => pc.Collection.Nombre));
 
             sb.AppendLine(string.Join(",",
-                p.Id,
                 Escapar(p.Nombre),
                 Escapar(p.Descripcion),
                 p.PrecioBase.ToString("F2"),
@@ -46,7 +46,6 @@ public class ExportService : IExportService
                 p.EsPersonalizable ? "true" : "false",
                 Escapar(p.Estado),
                 Escapar(p.Visibilidad),
-                Escapar(p.ImagenUrl ?? ""),
                 Escapar(categorias),
                 Escapar(colecciones),
                 p.CreadoEn.ToString("yyyy-MM-dd HH:mm:ss")
@@ -71,17 +70,20 @@ public class ExportService : IExportService
             .ToListAsync();
 
         var sb = new StringBuilder();
-        sb.AppendLine("id,nombre,stock_actual,stock_minimo,sucursal,suma_al_costo,unidad_medida");
+        sb.AppendLine(
+            "nombre,stock_actual,stock_minimo,sucursal,suma_al_costo,precio_costo,es_flor_primaria,unidad_medida"
+        );
 
         foreach (var i in items)
         {
             sb.AppendLine(string.Join(",",
-                i.Id,
                 Escapar(i.Nombre),
                 i.StockActual,
                 i.StockMinimo,
                 Escapar(i.Sucursal),
                 i.SumaAlCosto ? "true" : "false",
+                i.PrecioCosto.ToString("F2"),
+                i.EsFlorPrimaria ? "true" : "false",
                 Escapar(i.UnidadMedida ?? "")
             ));
         }
@@ -110,13 +112,12 @@ public class ExportService : IExportService
             .ToListAsync();
 
         var sb = new StringBuilder();
-        sb.AppendLine("id,id_local_offline,cliente,tipo_pedido,canal,estado,fecha_creacion,fecha_entrega,hora_entrega,total,saldo_pendiente,notas,sincronizado_en");
+        sb.AppendLine("id_local_offline,cliente,tipo_pedido,canal,estado,fecha_creacion,fecha_entrega,hora_entrega,total,saldo_pendiente,notas,sincronizado_en");
 
         foreach (var p in pedidos)
         {
             var cliente = $"{p.Customer?.Nombre} {p.Customer?.Apellido}".Trim();
             sb.AppendLine(string.Join(",",
-                p.Id,
                 Escapar(p.IdLocalOffline?.ToString() ?? ""),
                 Escapar(cliente),
                 Escapar(p.TipoPedido),
@@ -146,12 +147,11 @@ public class ExportService : IExportService
             .ToListAsync();
 
         var sb = new StringBuilder();
-        sb.AppendLine("id,tipo_cliente,nombre,apellido,telefono,correo,sexo,fecha_nacimiento,rfc,razon_social,cp_fiscal,regimen_fiscal,creado_en");
+        sb.AppendLine("tipo_cliente,nombre,apellido,telefono,correo,sexo,fecha_nacimiento,rfc,razon_social,cp_fiscal,regimen_fiscal,creado_en");
 
         foreach (var c in clientes)
         {
             sb.AppendLine(string.Join(",",
-                c.Id,
                 Escapar(c.TipoCliente),
                 Escapar(c.Nombre),
                 Escapar(c.Apellido ?? ""),

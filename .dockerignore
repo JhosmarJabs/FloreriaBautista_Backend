@@ -1,0 +1,11 @@
+bin/
+obj/
+.vs/
+.git/
+.gitignore
+Dockerfile*
+backups/
+google_token.json
+google_credentials.json
+.env
+.env.example

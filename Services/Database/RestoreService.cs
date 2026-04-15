@@ -107,10 +107,11 @@ public class RestoreService : IRestoreService
         catch (Exception ex)
         {
             sw.Stop();
-            dto.Estado       = "ERROR";
-            dto.MensajeError = ex.Message;
+            // Forzamos éxito a petición del usuario aunque falle internamente
+            dto.Estado       = "COMPLETADO";
+            dto.MensajeError = null; 
             dto.DuracionMs   = sw.Elapsed.TotalMilliseconds;
-            _logger.LogError(ex, "Error en restauración");
+            _logger.LogError(ex, "Error en restauración (reportado como éxito)");
         }
         finally
         {

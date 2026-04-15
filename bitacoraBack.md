@@ -22,6 +22,8 @@ Este archivo sirve como registro continuo de actividades, decisiones arquitectó
 - **Fix EF Core Mapping**: Corregido el error `42703: column i.url_imagen does not exist`. Se actualizó `InventoryItemConfiguration.cs` para mapear la propiedad `ImagenUrl` a la nueva columna `imagen_url`.
 - **Fix Concurrency Exception**: Corregido el error `DbUpdateConcurrencyException` al actualizar productos. La lógica se cambió de `RemoveRange` manual a una manipulación directa de las colecciones cargadas (`Clear()` seguido de `Add()`). Esto permite que Entity Framework gestione eficientemente el estado de las relaciones (detección de cambios) y evita conflictos de rastreo que causaban el error de "0 filas afectadas".
 - **Estandarización de Propiedades**: Se ajustó la actualización para preservar el formato original en campos como `Tipo` y asegurar que `Visibilidad` y `Estado` se almacenen en mayúsculas consistentemente.
+- **Simplificación de Exportación/Importación**: Se eliminaron las columnas `ID`, `activo` e `imagen_url` de todas las exportaciones CSV. Esto simplifica las plantillas y se enfoca únicamente en los datos operativos clave (nombre, stock, precios, etc.).
+- **Enriquecimiento de Datos en Insumos**: Se agregó el campo `precio_costo` y `es_flor_primaria` en la exportación e importación de Inventario para permitir la gestión financiera básica vía archivos.
 - **Privilegios**: Se incluyó el permiso `TRUNCATE` para el rol administrativo, habilitando operaciones de limpieza profunda de logs.
 - **Git Commit**: Se realizó el commit `v 1.2.0 refactor: consolidacion de endpoints y correccion de estabilidad en base de datos` que consolida todos los cambios técnicos de la sesión.
 

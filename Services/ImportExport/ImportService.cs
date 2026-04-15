@@ -78,7 +78,7 @@ public class ImportService : IImportService
                 var esPersonalizable = Col(cols, "espersonalizable", "false").ToLower() == "true";
                 var estado = Col(cols, "estado", "ACTIVO").ToUpper();
                 var visibilidad = Col(cols, "visibilidad", "AMBOS").ToUpper();
-                var imagenUrl = Col(cols, "imagenurl", Col(cols, "imagen_url"));
+                
                 var categoriasStr = Col(cols, "categorias");
                 var coleccionesStr = Col(cols, "colecciones");
                 var categoriasNom = categoriasStr.Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -106,7 +106,6 @@ public class ImportService : IImportService
                     productoExistente.EsPersonalizable = esPersonalizable;
                     productoExistente.Estado = estado;
                     productoExistente.Visibilidad = visibilidad;
-                    productoExistente.ImagenUrl = string.IsNullOrEmpty(imagenUrl) ? null : imagenUrl;
 
                     _context.RemoveRange(productoExistente.ProductCategories);
                     foreach (var catNom in categoriasNom)
@@ -140,7 +139,6 @@ public class ImportService : IImportService
                         EsPersonalizable = esPersonalizable,
                         Estado = estado,
                         Visibilidad = visibilidad,
-                        ImagenUrl = string.IsNullOrEmpty(imagenUrl) ? null : imagenUrl,
                         CreadoEn = DateTime.UtcNow
                     };
                     _context.Products.Add(producto);
@@ -239,6 +237,14 @@ public class ImportService : IImportService
                 var sucursal = Col(cols, "sucursal", "PRINCIPAL").ToUpper();
                 var sumaAlCostoRaw = Col(cols, "suma_al_costo", "true").ToLower();
                 var sumaAlCosto = sumaAlCostoRaw is "true" or "1" or "si" or "sí";
+                
+                var precioCosto = decimal.TryParse(Col(cols, "precio_costo", "0"), 
+                    System.Globalization.NumberStyles.Any, 
+                    System.Globalization.CultureInfo.InvariantCulture, out var pc) ? pc : 0;
+                
+                var esFlorPrimariaRaw = Col(cols, "es_flor_primaria", "false").ToLower();
+                var esFlorPrimaria = esFlorPrimariaRaw is "true" or "1" or "si" or "sí";
+                
                 var unidadMedida = Col(cols, "unidad_medida");
 
                 var itemExistente = itemsExist.FirstOrDefault(i =>
@@ -250,8 +256,11 @@ public class ImportService : IImportService
                     itemExistente.StockActual = stockActual;
                     itemExistente.StockMinimo = stockMinimo;
                     itemExistente.SumaAlCosto = sumaAlCosto;
+                    itemExistente.PrecioCosto = precioCosto;
+                    itemExistente.EsFlorPrimaria = esFlorPrimaria;
                     if (!string.IsNullOrWhiteSpace(unidadMedida))
                         itemExistente.UnidadMedida = unidadMedida.ToUpper();
+                    
                     dto.Actualizados++;
                 }
                 else
@@ -264,6 +273,8 @@ public class ImportService : IImportService
                         StockMinimo  = stockMinimo,
                         Sucursal     = sucursal,
                         SumaAlCosto  = sumaAlCosto,
+                        PrecioCosto  = precioCosto,
+                        EsFlorPrimaria = esFlorPrimaria,
                         UnidadMedida = string.IsNullOrWhiteSpace(unidadMedida) ? null : unidadMedida.ToUpper()
                     });
                     dto.Insertados++;

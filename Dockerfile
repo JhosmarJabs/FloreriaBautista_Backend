@@ -19,7 +19,13 @@ WORKDIR /app
 
 # Instalar postgresql-client para pg_dump y pg_restore
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    postgresql-client \
+    lsb-release \
+    gnupg2 \
+    curl \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg \
+    && echo "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client-17 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar el build

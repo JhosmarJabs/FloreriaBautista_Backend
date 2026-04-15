@@ -106,9 +106,10 @@ public class GoogleDriveService
         var folderId = Env("GOOGLE_DRIVE_FOLDER_ID");
 
         var request = drive.Files.List();
-        request.Q       = $"'{folderId}' in parents and trashed = false";
-        request.Fields  = "files(id, name, size, createdTime, webViewLink)";
-        request.OrderBy = "createdTime desc";
+        request.PageSize = 100;
+        request.Q        = $"'{folderId}' in parents and trashed = false";
+        request.Fields   = "nextPageToken, files(id, name, size, createdTime, webViewLink)";
+        request.OrderBy  = "createdTime desc";
 
         var result = await request.ExecuteAsync();
 
