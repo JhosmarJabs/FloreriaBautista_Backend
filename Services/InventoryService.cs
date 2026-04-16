@@ -23,6 +23,11 @@ public class InventoryService : IInventoryService
     public async Task<PagedResultDto<InventoryItemDto>> ListarAsync(
         string? sucursal, bool? bajoMinimo, string? busqueda, int page, int size)
     {
+        // FIX: Validación de paginación para evitar divisiones por cero o valores inválidos (Reliability C)
+        if (page <= 0) page = 1;
+        if (size <= 0) size = 10;
+        if (size > 100) size = 100;
+
         var query = _context.InventoryItems
             .Where(i => i.Activo)
             .AsQueryable();
@@ -36,13 +41,32 @@ public class InventoryService : IInventoryService
             query = query.Where(i => i.Nombre.ToLower().Contains(b));
         }
 
-        var items = await query.OrderBy(i => i.Nombre).ToListAsync();
-
+        // FIX: Se movió el filtro de 'bajoMinimo' antes de ejecutar la consulta para filtrar en BD (Performance/Reliability)
         if (bajoMinimo == true)
-            items = items.Where(i => i.StockActual <= i.StockMinimo).ToList();
+        {
+            query = query.Where(i => i.StockActual <= i.StockMinimo);
+        }
 
-        var total    = items.Count;
-        var paginado = items.Skip((page - 1) * size).Take(size).Select(MapToDto).ToList();
+        var total = await query.CountAsync();
+        var paginado = await query
+            .OrderBy(i => i.Nombre)
+            .Skip((page - 1) * size)
+            .Take(size)
+            .Select(i => new InventoryItemDto
+            {
+                Id           = i.Id,
+                Nombre       = i.Nombre,
+                StockActual  = i.StockActual,
+                StockMinimo  = i.StockMinimo,
+                Sucursal     = i.Sucursal,
+                SumaAlCosto  = i.SumaAlCosto,
+                UnidadMedida = i.UnidadMedida,
+                PrecioCosto  = i.PrecioCosto,
+                EsFlorPrimaria = i.EsFlorPrimaria,
+                ImagenUrl    = i.ImagenUrl,
+                Activo       = i.Activo
+            })
+            .ToListAsync();
 
         return new PagedResultDto<InventoryItemDto>
         {
@@ -54,7 +78,7 @@ public class InventoryService : IInventoryService
         };
     }
 
-    // ── Detalle ───────────────────��──────────────────────────────��
+    // ── Detalle ───────────────────────────────────────────────────
     public async Task<InventoryItemDto> ObtenerAsync(Guid id)
     {
         var item = await _context.InventoryItems.FindAsync(id)
@@ -62,7 +86,7 @@ public class InventoryService : IInventoryService
         return MapToDto(item);
     }
 
-    // ── Crear ─────────────────────────��───────────────────────────
+    // ── Crear ─────────────────────────────────────────────────────
     public async Task<InventoryItemDto> CrearAsync(CreateInventoryItemDto request)
     {
         var item = new InventoryItem
@@ -122,7 +146,7 @@ public class InventoryService : IInventoryService
 
         item.Activo = false;
         await _context.SaveChangesAsync();
-        _logger.LogInformation("InventoryItem desactivado (borrado lógico): {Id}", id);
+        _logger.LogInformation("InventoryItem desactivado (borrado lǸgico): {Id}", id);
     }
 
     // ── Registrar movimiento ──────────────────────────────────────
@@ -134,7 +158,7 @@ public class InventoryService : IInventoryService
 
         var tipo = request.Tipo.ToUpper();
         if (tipo != "ENTRADA" && tipo != "SALIDA" && tipo != "AJUSTE")
-            throw new AppException("Tipo de movimiento inválido. Use: ENTRADA, SALIDA o AJUSTE.");
+            throw new AppException("Tipo de movimiento invǭlido. Use: ENTRADA, SALIDA o AJUSTE.");
 
         var stockAntes = item.StockActual;
 
@@ -181,10 +205,13 @@ public class InventoryService : IInventoryService
         };
     }
 
-    // ── Listar movimientos ─────────────────────��──────────────────
+    // ── Listar movimientos ────────────────────────────────────────
     public async Task<PagedResultDto<InventoryMovementDto>> ListarMovimientosAsync(
         Guid? inventoryItemId, int page, int size)
     {
+        if (page <= 0) page = 1;
+        if (size <= 0) size = 10;
+
         var query = _context.InventoryMovements
             .Include(m => m.InventoryItem)
             .AsQueryable();

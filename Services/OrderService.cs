@@ -205,6 +205,10 @@ public class OrderService : IOrderService
     private static async Task<PagedResultDto<OrderSummaryDto>> PaginarAsync(
         IQueryable<Order> query, int page, int size)
     {
+        if (page <= 0) page = 1;
+        if (size <= 0) size = 10;
+        if (size > 100) size = 100;
+
         var total = await query.CountAsync();
         var items = await query.Skip((page - 1) * size).Take(size)
             .Select(o => new OrderSummaryDto

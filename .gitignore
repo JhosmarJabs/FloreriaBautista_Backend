@@ -7,7 +7,7 @@ obj/
 .claude/
 
 # Secretos — NUNCA subir a git
-.env
+.env*
 appsettings.Development.json
 appsettings.Production.json
 *.pfx
