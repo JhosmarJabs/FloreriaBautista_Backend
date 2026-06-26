@@ -24,7 +24,10 @@ public class AdminCatalogosController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> Listar()
     {
-        var items = await _context.Catalogos.OrderBy(x => x.Nombre).ToListAsync();
+        var items = await _context.Catalogos
+            .Include(c => c.ProductCatalogos)
+            .OrderBy(x => x.Nombre)
+            .ToListAsync();
         return Ok(ApiResponseDto<List<Catalogo>>.Ok(items));
     }
 
@@ -32,7 +35,10 @@ public class AdminCatalogosController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> Detalle(Guid id)
     {
-        var item = await _context.Catalogos.FindAsync(id);
+        var item = await _context.Catalogos
+            .Include(c => c.ProductCatalogos)
+            .FirstOrDefaultAsync(c => c.Id == id);
+            
         if (item == null) return NotFound(ApiResponseDto<object>.Fail("Catálogo no encontrado."));
         return Ok(ApiResponseDto<Catalogo>.Ok(item));
     }
@@ -65,8 +71,8 @@ public class AdminCatalogosController : ControllerBase
         item.Activo = request.Activo;
         item.ActualizadoEn = DateTime.UtcNow;
 
-        // Limpiar relaciones anteriores
-        _context.ProductCatalogos.RemoveRange(item.ProductCatalogos);
+        // Limpiar relaciones anteriores en memoria y dejar que EF Core las rastree como eliminadas
+        item.ProductCatalogos.Clear();
 
         // Agregar las nuevas relaciones
         if (request.ProductCatalogos != null)
