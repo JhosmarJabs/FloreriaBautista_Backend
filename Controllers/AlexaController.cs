@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using FloreriaBautista.Data;
 using FloreriaBautista.Services.Reports;
+using FloreriaBautista.Models.DTOs.Common;
+using FloreriaBautista.Models.DTOs.Inventory;
 
 namespace FloreriaBautista.Controllers;
 
@@ -15,8 +17,8 @@ public class AlexaController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ReportsService _reportsService;
 
-    // Caché en memoria de productos activos (ID y Nombre)
-    private static List<(Guid Id, string Nombre)>? _productosEnMemoria;
+    // Caché en memoria de insumos activos (ID y Nombre)
+    private static List<(Guid Id, string Nombre)>? _insumosEnMemoria;
     private static readonly object _lock = new object();
 
     public AlexaController(AppDbContext context, ReportsService reportsService)
@@ -25,81 +27,117 @@ public class AlexaController : ControllerBase
         _reportsService = reportsService;
     }
 
-    private async Task AsegurarCacheProductosAsync(bool forzarRefresco = false)
+    private async Task AsegurarCacheInsumosAsync(bool forzarRefresco = false)
     {
-        if (_productosEnMemoria == null || forzarRefresco)
+        if (_insumosEnMemoria == null || forzarRefresco)
         {
-            var items = await _context.Products
-                .Where(p => p.Estado == "ACTIVO")
-                .Select(p => new { p.Id, p.Nombre })
+            var items = await _context.InventoryItems
+                .Where(i => i.Activo)
+                .Select(i => new { i.Id, i.Nombre })
                 .ToListAsync();
 
             lock (_lock)
             {
-                _productosEnMemoria = items.Select(x => (x.Id, x.Nombre)).ToList();
+                _insumosEnMemoria = items.Select(x => (x.Id, x.Nombre)).ToList();
             }
         }
     }
 
-    // GET /api/alexa/products?busqueda=rosa
-    [HttpGet("products")]
-    public async Task<IActionResult> GetProducts([FromQuery] string? busqueda)
+    // GET /api/alexa/inventory
+    [HttpGet("inventory")]
+    public async Task<IActionResult> GetInventory(
+        [FromQuery] string? sucursal,
+        [FromQuery] bool? bajoMinimo,
+        [FromQuery] string? busqueda,
+        [FromQuery] int page = 1,
+        [FromQuery] int size = 20)
     {
-        // Si no hay parámetro de búsqueda, forzamos la actualización del caché en memoria
         bool forzarRefresco = string.IsNullOrWhiteSpace(busqueda);
-        await AsegurarCacheProductosAsync(forzarRefresco);
+        await AsegurarCacheInsumosAsync(forzarRefresco);
 
-        var query = _context.Products.Where(p => p.Estado == "ACTIVO");
-        
-        if (!string.IsNullOrWhiteSpace(busqueda))
+        var query = _context.InventoryItems.Where(i => i.Activo);
+
+        if (!string.IsNullOrWhiteSpace(sucursal))
         {
-            // Filtrar en memoria los productos que coincidan parcialmente con la búsqueda para obtener sus IDs
-            var idsCoincidentes = _productosEnMemoria!
-                .Where(p => p.Nombre.Contains(busqueda, StringComparison.OrdinalIgnoreCase))
-                .Select(p => p.Id)
-                .ToList();
-
-            // Consultar a la base de datos por ID en lugar de filtrar por texto
-            query = query.Where(p => idsCoincidentes.Contains(p.Id));
+            query = query.Where(i => i.Sucursal == sucursal);
         }
 
+        if (bajoMinimo.HasValue && bajoMinimo.Value)
+        {
+            query = query.Where(i => i.StockActual <= i.StockMinimo);
+        }
+
+        if (!string.IsNullOrWhiteSpace(busqueda))
+        {
+            var idsCoincidentes = _insumosEnMemoria!
+                .Where(i => i.Nombre.Contains(busqueda, StringComparison.OrdinalIgnoreCase))
+                .Select(i => i.Id)
+                .ToList();
+
+            query = query.Where(i => idsCoincidentes.Contains(i.Id));
+        }
+
+        var total = await query.CountAsync();
         var items = await query
-            .OrderBy(p => p.Nombre)
-            .Select(p => new 
-            { 
-                p.Id, 
-                p.Nombre, 
-                p.PrecioBase, 
-                p.ImagenUrl 
+            .OrderBy(i => i.Nombre)
+            .Skip((page - 1) * size)
+            .Take(size)
+            .Select(i => new InventoryItemDto
+            {
+                Id = i.Id,
+                Nombre = i.Nombre,
+                StockActual = i.StockActual,
+                StockMinimo = i.StockMinimo,
+                Sucursal = i.Sucursal,
+                SumaAlCosto = i.SumaAlCosto,
+                UnidadMedida = i.UnidadMedida,
+                PrecioCosto = i.PrecioCosto,
+                EsFlorPrimaria = i.EsFlorPrimaria,
+                ImagenUrl = i.ImagenUrl,
+                Activo = i.Activo
             })
             .ToListAsync();
 
-        return Ok(items);
+        var resultado = new PagedResultDto<InventoryItemDto>
+        {
+            Items = items,
+            Total = total,
+            Pagina = page,
+            TamanoPagina = size,
+            TotalPaginas = (int)Math.Ceiling((double)total / size)
+        };
+
+        return Ok(ApiResponseDto<PagedResultDto<InventoryItemDto>>.Ok(resultado));
     }
 
-    // GET /api/alexa/products/{id:guid}
-    [HttpGet("products/{id:guid}")]
-    public async Task<IActionResult> GetProduct(Guid id)
+    // GET /api/alexa/inventory/{id:guid}
+    [HttpGet("inventory/{id:guid}")]
+    public async Task<IActionResult> GetInventoryItem(Guid id)
     {
-        var product = await _context.Products
-            .Where(p => p.Id == id)
-            .Select(p => new 
-            { 
-                p.Id, 
-                p.Nombre, 
-                p.Descripcion, 
-                p.PrecioBase, 
-                p.Estado, 
-                p.ImagenUrl 
+        var item = await _context.InventoryItems
+            .Where(i => i.Id == id)
+            .Select(i => new InventoryItemDto
+            {
+                Id = i.Id,
+                Nombre = i.Nombre,
+                StockActual = i.StockActual,
+                StockMinimo = i.StockMinimo,
+                Sucursal = i.Sucursal,
+                SumaAlCosto = i.SumaAlCosto,
+                UnidadMedida = i.UnidadMedida,
+                PrecioCosto = i.PrecioCosto,
+                EsFlorPrimaria = i.EsFlorPrimaria,
+                ImagenUrl = i.ImagenUrl,
+                Activo = i.Activo
             })
             .FirstOrDefaultAsync();
 
-        if (product == null)
+        if (item == null)
         {
-            return NotFound(new { mensaje = "Producto no encontrado." });
+            return NotFound(ApiResponseDto<object>.Fail("Insumo no encontrado."));
         }
 
-        return Ok(product);
+        return Ok(ApiResponseDto<InventoryItemDto>.Ok(item));
     }
 
     // GET /api/alexa/reports/ventas-hoy
