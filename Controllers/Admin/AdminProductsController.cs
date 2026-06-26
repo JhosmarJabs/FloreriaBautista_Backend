@@ -4,10 +4,10 @@ using FloreriaBautista.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace FloreriaBautista.Controllers;
+namespace FloreriaBautista.Controllers.Admin;
 
 [ApiController]
-[Tags("Administrador")]
+[Tags("1. Catálogo y Diseño")]
 [Route("api/admin/products")]
 [Authorize(Roles = "ADMIN")]
 public class AdminProductsController : ControllerBase
@@ -43,13 +43,12 @@ public class AdminProductsController : ControllerBase
         return Ok(ApiResponseDto<ProductResponseDto>.Ok(producto, "Producto creado correctamente."));
     }
 
-    // POST /api/admin/products/{productId}
+    // POST /api/admin/products/{productId:guid} (Actualizar / Borrado lógico)
     [HttpPost("{productId:guid}")]
-    public async Task<IActionResult> Actualizar(Guid productId, [FromBody] UpdateProductRequestDto request)
+    public async Task<IActionResult> Actualizar(Guid productId,[FromBody] UpdateProductRequestDto request)
     {
         var producto = await _productService.ActualizarAsync(productId, request);
         return Ok(ApiResponseDto<ProductResponseDto>.Ok(producto, "Producto actualizado correctamente."));
     }
-
 }
 

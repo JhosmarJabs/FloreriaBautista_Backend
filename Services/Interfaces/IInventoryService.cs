@@ -12,4 +12,8 @@ public interface IInventoryService
     Task                                       EliminarAsync(Guid id);
     Task<InventoryMovementDto>                 RegistrarMovimientoAsync(RegisterMovementRequestDto request, Guid usuarioId);
     Task<PagedResultDto<InventoryMovementDto>> ListarMovimientosAsync(Guid? inventoryItemId, int page, int size);
+    
+    // Historial y Predicción
+    Task<InventoryHistoryDto> ObtenerHistorialAsync(Guid inventoryItemId);
+    Task                      RegistrarSnapshotDiarioAsync();
 }

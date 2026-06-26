@@ -54,15 +54,15 @@ public class OrdersController : ControllerBase
         return Ok(ApiResponseDto<OrderResponseDto>.Ok(order));
     }
 
-    // POST /api/orders/{orderId}/status
-    [HttpPost("{orderId:guid}/status")]
+    // POST /api/orders/{orderId:guid} (Actualizar estado)
+    [HttpPost("{orderId:guid}")]
     [Authorize(Roles = "ADMIN,EMPLEADO")]
-    public async Task<IActionResult> CambiarEstado(Guid orderId, [FromBody] UpdateOrderStatusRequestDto request)
+    public async Task<IActionResult> Actualizar(Guid orderId, [FromBody] UpdateOrderStatusRequestDto request)
     {
         var roles = User.FindAll(System.Security.Claims.ClaimTypes.Role)
             .Select(c => c.Value).ToList();
         var order = await _orderService.CambiarEstadoAsync(orderId, request, roles);
-        return Ok(ApiResponseDto<OrderResponseDto>.Ok(order, "Estado actualizado."));
+        return Ok(ApiResponseDto<OrderResponseDto>.Ok(order, "Pedido actualizado (estado)."));
     }
 
     private Guid? ObtenerUsuarioId()

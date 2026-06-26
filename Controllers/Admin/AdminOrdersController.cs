@@ -4,10 +4,10 @@ using FloreriaBautista.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace FloreriaBautista.Controllers;
+namespace FloreriaBautista.Controllers.Admin;
 
 [ApiController]
-[Tags("Administrador")]
+[Tags("2. Operaciones y Ventas")]
 [Route("api/admin/orders")]
 [Authorize(Roles = "ADMIN,EMPLEADO")]
 public class AdminOrdersController : ControllerBase

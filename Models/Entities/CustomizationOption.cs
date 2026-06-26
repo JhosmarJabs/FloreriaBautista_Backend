@@ -8,6 +8,9 @@ public class CustomizationOption
     public string  Tipo     { get; set; } = string.Empty; // TEXTO / LISTA / BOOLEANO
     public string? Opciones { get; set; }                 // JSON array si Tipo = LISTA
 
+    public decimal PrecioAdicional { get; set; }
+    public bool    Activo          { get; set; } = true;
+
     public ICollection<ProductCustomizationOption>  ProductCustomizationOptions  { get; set; } = [];
     public ICollection<OrderItemCustomization>      OrderItemCustomizations      { get; set; } = [];
 }

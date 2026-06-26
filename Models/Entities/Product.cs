@@ -12,10 +12,11 @@ public class Product
     public string   Visibilidad      { get; set; } = "AMBOS"; // WEB / SOLO_SUCURSAL / AMBOS
     public string?  ImagenUrl        { get; set; }
     public bool     Activo           { get; set; } = true;
-    public DateTime CreadoEn        { get; set; } = DateTime.UtcNow;
+    public DateTime CreadoEn         { get; set; } = DateTime.UtcNow;
+    public DateTime ActualizadoEn    { get; set; } = DateTime.UtcNow;
 
     public ICollection<ProductCategory>            ProductCategories            { get; set; } = [];
-    public ICollection<ProductCollection>          ProductCollections           { get; set; } = [];
+    public ICollection<ProductCatalogo>            ProductCatalogos             { get; set; } = [];
     public ICollection<ProductCustomizationOption> ProductCustomizationOptions  { get; set; } = [];
     public ICollection<OrderItem>                  OrderItems                   { get; set; } = [];
     public ICollection<ProductRecipe>              ProductRecipes               { get; set; } = [];

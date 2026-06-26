@@ -20,7 +20,7 @@ public class ImportService : IImportService
     }
 
     // ── Importar Productos ────────────────────────────────────────
-    // CSV: nombre,descripcion,precio_base,tipo,es_personalizable,estado,visibilidad,imagen_url,categorias,colecciones
+    // CSV: nombre,descripcion,precio_base,tipo,es_personalizable,estado,visibilidad,imagen_url,categorias,catalogos
     public async Task<ImportResultDto> ImportarProductosAsync(Stream csv, string nombreArchivo)
     {
         var sw = Stopwatch.StartNew();
@@ -43,10 +43,10 @@ public class ImportService : IImportService
         var separador = lineas.Count > 0 ? DetectarSeparador(lineas[0]) : ',';
 
         var categoriasDb = await _context.Categories.ToListAsync();
-        var coleccionesDb = await _context.Collections.ToListAsync();
+        var catalogosDb = await _context.Catalogos.ToListAsync();
         var productosExist = await _context.Products
             .Include(p => p.ProductCategories)
-            .Include(p => p.ProductCollections)
+            .Include(p => p.ProductCatalogos)
             .ToListAsync();
 
         var encabezados = ParsearCsv(lineas[0], separador)
@@ -80,9 +80,9 @@ public class ImportService : IImportService
                 var visibilidad = Col(cols, "visibilidad", "AMBOS").ToUpper();
                 
                 var categoriasStr = Col(cols, "categorias");
-                var coleccionesStr = Col(cols, "colecciones");
+                var catalogosStr = Col(cols, "catalogos");
                 var categoriasNom = categoriasStr.Split('|', StringSplitOptions.RemoveEmptyEntries);
-                var coleccionesNom = coleccionesStr.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var catalogosNom = catalogosStr.Split('|', StringSplitOptions.RemoveEmptyEntries);
 
                 if (estado != "ACTIVO" && estado != "INACTIVO") estado = "ACTIVO";
                 if (visibilidad != "WEB" && visibilidad != "SOLO_SUCURSAL" && visibilidad != "AMBOS")
@@ -96,7 +96,9 @@ public class ImportService : IImportService
                 }
 
                 var productoExistente = productosExist.FirstOrDefault(pr =>
-                    pr.Nombre.Equals(nombre, StringComparison.OrdinalIgnoreCase));
+                    pr.Nombre.Equals(nombre, StringComparison.OrdinalIgnoreCase))
+                    ?? _context.Products.Local.FirstOrDefault(p => 
+                        p.Nombre.Equals(nombre, StringComparison.OrdinalIgnoreCase));
 
                 if (productoExistente != null)
                 {
@@ -116,13 +118,13 @@ public class ImportService : IImportService
                             _context.Add(new ProductCategory { ProductId = productoExistente.Id, CategoryId = cat.Id });
                     }
 
-                    _context.RemoveRange(productoExistente.ProductCollections);
-                    foreach (var colNom in coleccionesNom)
+                    _context.RemoveRange(productoExistente.ProductCatalogos);
+                    foreach (var catNom in catalogosNom)
                     {
-                        var col = coleccionesDb.FirstOrDefault(c =>
-                            c.Nombre.Equals(colNom.Trim(), StringComparison.OrdinalIgnoreCase));
-                        if (col != null)
-                            _context.Add(new ProductCollection { ProductId = productoExistente.Id, CollectionId = col.Id });
+                        var cat = catalogosDb.FirstOrDefault(c =>
+                            c.Nombre.Equals(catNom.Trim(), StringComparison.OrdinalIgnoreCase));
+                        if (cat != null)
+                            _context.Add(new ProductCatalogo { ProductId = productoExistente.Id, CatalogoId = cat.Id });
                     }
 
                     dto.Actualizados++;
@@ -151,12 +153,12 @@ public class ImportService : IImportService
                             _context.Add(new ProductCategory { ProductId = producto.Id, CategoryId = cat.Id });
                     }
 
-                    foreach (var colNom in coleccionesNom)
+                    foreach (var catNom in catalogosNom)
                     {
-                        var col = coleccionesDb.FirstOrDefault(c =>
-                            c.Nombre.Equals(colNom.Trim(), StringComparison.OrdinalIgnoreCase));
-                        if (col != null)
-                            _context.Add(new ProductCollection { ProductId = producto.Id, CollectionId = col.Id });
+                        var cat = catalogosDb.FirstOrDefault(c =>
+                            c.Nombre.Equals(catNom.Trim(), StringComparison.OrdinalIgnoreCase));
+                        if (cat != null)
+                            _context.Add(new ProductCatalogo { ProductId = producto.Id, CatalogoId = cat.Id });
                     }
 
                     dto.Insertados++;
@@ -247,9 +249,13 @@ public class ImportService : IImportService
                 
                 var unidadMedida = Col(cols, "unidad_medida");
 
+                // Corregir búsqueda para incluir items recién añadidos en este mismo lote (previniendo duplicados)
                 var itemExistente = itemsExist.FirstOrDefault(i =>
                     i.Nombre.Equals(nombre, StringComparison.OrdinalIgnoreCase) &&
-                    i.Sucursal.Equals(sucursal, StringComparison.OrdinalIgnoreCase));
+                    i.Sucursal.Equals(sucursal, StringComparison.OrdinalIgnoreCase))
+                    ?? _context.InventoryItems.Local.FirstOrDefault(i => 
+                        i.Nombre.Equals(nombre, StringComparison.OrdinalIgnoreCase) && 
+                        i.Sucursal.Equals(sucursal, StringComparison.OrdinalIgnoreCase));
 
                 if (itemExistente != null)
                 {

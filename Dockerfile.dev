@@ -21,4 +21,4 @@ ENV ASPNETCORE_URLS=http://+:5000
 ENV ASPNETCORE_ENVIRONMENT=Development
 ENV DOTNET_USE_POLLING_FILE_WATCHER=true
 
-CMD ["dotnet", "watch", "run", "--no-launch-profile"]
+CMD ["dotnet", "watch", "run", "--project", "FloreriaBautista.csproj", "--no-launch-profile"]

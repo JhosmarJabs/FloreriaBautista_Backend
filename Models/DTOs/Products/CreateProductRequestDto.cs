@@ -14,6 +14,6 @@ public class CreateProductRequestDto
     public string             Visibilidad      { get; set; } = "AMBOS";
     public string?            ImagenUrl        { get; set; }
     public List<string>       Categorias       { get; set; } = [];
-    public List<string>       Colecciones      { get; set; } = [];
+    public List<string>       Catalogos       { get; set; } = [];
     public List<ProductRecipeRequestDto> Receta { get; set; } = [];
 }

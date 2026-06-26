@@ -4,17 +4,16 @@ using FloreriaBautista.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace FloreriaBautista.Controllers;
+namespace FloreriaBautista.Controllers.Admin;
 
 [ApiController]
-[Tags("Administrador")]
+[Tags("2. Operaciones y Ventas")]
 [Route("api/admin/inventory")]
 [Authorize(Roles = "ADMIN,EMPLEADO")]
 public class AdminInventoryController : ControllerBase
 {
     private readonly IInventoryService _inventoryService;
-    public AdminInventoryController(IInventoryService inventoryService)
-        => _inventoryService = inventoryService;
+    public AdminInventoryController(IInventoryService inventoryService) => _inventoryService = inventoryService;
 
     // GET /api/admin/inventory?sucursal=PRINCIPAL&bajoMinimo=true&busqueda=rosa
     [HttpGet]
@@ -46,22 +45,13 @@ public class AdminInventoryController : ControllerBase
         return Ok(ApiResponseDto<InventoryItemDto>.Ok(item, "Insumo creado correctamente."));
     }
 
-    // POST /api/admin/inventory/{id}
+    // POST /api/admin/inventory/{id} (Actualizar / Borrado lógico)
     [HttpPost("{id:guid}")]
     [Authorize(Roles = "ADMIN")]
     public async Task<IActionResult> Actualizar(Guid id, [FromBody] UpdateInventoryItemDto request)
     {
         var item = await _inventoryService.ActualizarAsync(id, request);
         return Ok(ApiResponseDto<InventoryItemDto>.Ok(item, "Insumo actualizado correctamente."));
-    }
-
-    // POST /api/admin/inventory/{id}/delete
-    [HttpPost("{id:guid}/delete")]
-    [Authorize(Roles = "ADMIN")]
-    public async Task<IActionResult> Eliminar(Guid id)
-    {
-        await _inventoryService.EliminarAsync(id);
-        return Ok(ApiResponseDto<object>.Ok(null!, "Insumo desactivado correctamente."));
     }
 
     // POST /api/admin/inventory/movements
@@ -74,14 +64,6 @@ public class AdminInventoryController : ControllerBase
         return Ok(ApiResponseDto<InventoryMovementDto>.Ok(movimiento, "Movimiento registrado."));
     }
 
-    // GET /api/admin/inventory/alerts
-    [HttpGet("alerts")]
-    public async Task<IActionResult> ListarAlertas([FromQuery] string? sucursal, [FromQuery] int page = 1, [FromQuery] int size = 20)
-    {
-        var resultado = await _inventoryService.ListarAsync(sucursal, true, null, page, size);
-        return Ok(ApiResponseDto<PagedResultDto<InventoryItemDto>>.Ok(resultado));
-    }
-
     // GET /api/admin/inventory/movements?inventoryItemId=xxx
     [HttpGet("movements")]
     public async Task<IActionResult> ListarMovimientos(
@@ -91,6 +73,23 @@ public class AdminInventoryController : ControllerBase
     {
         var resultado = await _inventoryService.ListarMovimientosAsync(inventoryItemId, page, size);
         return Ok(ApiResponseDto<PagedResultDto<InventoryMovementDto>>.Ok(resultado));
+    } 
+    
+    // GET /api/admin/inventory/{id}/history
+    [HttpGet("{id:guid}/history")]
+    public async Task<IActionResult> ObtenerHistorial(Guid id)
+    {
+        var historial = await _inventoryService.ObtenerHistorialAsync(id);
+        return Ok(ApiResponseDto<InventoryHistoryDto>.Ok(historial));
+    }
+
+    // POST /api/admin/inventory/snapshots
+    [HttpPost("snapshots")]
+    [Authorize(Roles = "ADMIN")]
+    public async Task<IActionResult> RegistrarSnapshot()
+    {
+        await _inventoryService.RegistrarSnapshotDiarioAsync();
+        return Ok(ApiResponseDto<object>.Ok(new { }, "Snapshot diario registrado con éxito."));
     }
 
     private Guid? ObtenerUsuarioId()

@@ -18,25 +18,25 @@ public class ExportService : IExportService
     }
 
     // ── Exportar Productos ────────────────────────────────────────
-    // Columnas: id,nombre,descripcion,precio_base,tipo,es_personalizable,estado,visibilidad,imagen_url,categorias,colecciones,creado_en
+    // Columnas: id,nombre,descripcion,precio_base,tipo,es_personalizable,estado,visibilidad,imagen_url,categorias,catalogos,creado_en
     public async Task<(byte[] Contenido, string NombreArchivo)> ExportarProductosAsync()
     {
         var sw = Stopwatch.StartNew();
 
         var productos = await _context.Products.Include(p => p.ProductCategories).ThenInclude(pc => pc.Category)
-            .Include(p => p.ProductCollections).ThenInclude(pc => pc.Collection)
+            .Include(p => p.ProductCatalogos).ThenInclude(pc => pc.Catalogo)
             .OrderBy(p => p.Nombre)
             .ToListAsync();
 
         var sb = new StringBuilder();
         sb.AppendLine(
-            "nombre,descripcion,precio_base,tipo,es_personalizable,estado,visibilidad,categorias,colecciones,creado_en"
+            "nombre,descripcion,precio_base,tipo,es_personalizable,estado,visibilidad,categorias,catalogos,creado_en"
         );
 
         foreach (var p in productos)
         {
             var categorias  = string.Join("|", p.ProductCategories.Select(pc => pc.Category.Nombre));
-            var colecciones = string.Join("|", p.ProductCollections.Select(pc => pc.Collection.Nombre));
+            var catalogos = string.Join("|", p.ProductCatalogos.Select(pc => pc.Catalogo.Nombre));
 
             sb.AppendLine(string.Join(",",
                 Escapar(p.Nombre),
@@ -47,7 +47,7 @@ public class ExportService : IExportService
                 Escapar(p.Estado),
                 Escapar(p.Visibilidad),
                 Escapar(categorias),
-                Escapar(colecciones),
+                Escapar(catalogos),
                 p.CreadoEn.ToString("yyyy-MM-dd HH:mm:ss")
             ));
         }

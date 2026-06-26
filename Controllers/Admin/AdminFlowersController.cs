@@ -7,10 +7,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
 
-namespace FloreriaBautista.Controllers;
+namespace FloreriaBautista.Controllers.Admin;
 
 [ApiController]
-[Tags("Administrador")]
+[Tags("1. Catálogo y Diseño")]
 [Route("api/admin/recipes")]
 [Authorize(Roles = "ADMIN,EMPLEADO")]
 public class AdminFlowersController : ControllerBase

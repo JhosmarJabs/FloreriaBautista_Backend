@@ -5,10 +5,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-namespace FloreriaBautista.Controllers;
+namespace FloreriaBautista.Controllers.Admin;
 
 [ApiController]
-[Tags("Administrador")]
+[Tags("3. Sistema y Seguridad")]
 [Route("api/admin/audit")]
 [Authorize(Roles = "ADMIN")]
 public class AdminAuditController : ControllerBase

@@ -19,13 +19,14 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(p => p.Visibilidad).HasMaxLength(20).HasDefaultValue("AMBOS");
         builder.Property(p => p.ImagenUrl).HasMaxLength(255);
         builder.Property(p => p.CreadoEn).HasDefaultValueSql("NOW()");
+        builder.Property(p => p.ActualizadoEn).HasDefaultValueSql("NOW()");
 
         builder.HasMany(p => p.ProductCategories)
                .WithOne(pc => pc.Product)
                .HasForeignKey(pc => pc.ProductId)
                .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasMany(p => p.ProductCollections)
+        builder.HasMany(p => p.ProductCatalogos)
                .WithOne(pc => pc.Product)
                .HasForeignKey(pc => pc.ProductId)
                .OnDelete(DeleteBehavior.Cascade);

@@ -10,9 +10,10 @@ public class CustomizationOptionConfiguration : IEntityTypeConfiguration<Customi
     {
         builder.ToTable("customization_options");
         builder.HasKey(c => c.Id);
-        builder.Property(c => c.Clave).HasMaxLength(100).IsRequired();
+        builder.Property(c => c.Clave).HasMaxLength(50).IsRequired();
         builder.Property(c => c.Nombre).HasMaxLength(100).IsRequired();
-        builder.Property(c => c.Tipo).HasMaxLength(50).IsRequired();
+        builder.Property(c => c.Tipo).HasMaxLength(20).IsRequired();
         builder.Property(c => c.Opciones).HasColumnType("text");
+        builder.Property(c => c.Activo).HasDefaultValue(true);
     }
 }

@@ -16,20 +16,9 @@ else
     Env.TraversePath().Load();
 }
 
-// ── Datadog APM ────────────────────────────────────────────────────────────────
-// TracerSettings.FromDefaultSources() lee las variables DD_* del entorno.
-// Configura estas variables en tu .env (desarrollo) o en Docker/Kubernetes (producción):
-//
-//   DD_SERVICE    = floreriabackend
-//   DD_ENV        = development | production
-//   DD_VERSION    = 1.0.9
-//   DD_AGENT_HOST = localhost          (o el hostname del contenedor del Agent)
-//   DD_AGENT_PORT = 8126
-//
-// Sin un Agent corriendo el tracer opera en modo no-op (sin errores, sin envío de datos).
 var tracerSettings = TracerSettings.FromDefaultSources();
 Tracer.Configure(tracerSettings);
-var tracer = Tracer.Instance;   // instancia global — úsala en cualquier parte de la app
+var tracer = Tracer.Instance;   
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -65,7 +54,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerDocumentation();
 }
 
-app.UseCors("DefaultPolicy"); // Added CORS policy
+app.UseCors("DefaultPolicy"); 
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();

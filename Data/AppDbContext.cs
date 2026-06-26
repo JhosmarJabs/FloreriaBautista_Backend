@@ -20,11 +20,11 @@ public class AppDbContext : DbContext
     // ── Catálogo ───────────────────────────────────────────────────
     public DbSet<Product>             Products             => Set<Product>();
     public DbSet<Category>            Categories           => Set<Category>();
-    public DbSet<Collection>          Collections          => Set<Collection>();
+    public DbSet<Catalogo>            Catalogos            => Set<Catalogo>();
     public DbSet<CustomizationOption> CustomizationOptions => Set<CustomizationOption>();
 
     public DbSet<ProductCategory>            ProductCategories           => Set<ProductCategory>();
-    public DbSet<ProductCollection>          ProductCollections          => Set<ProductCollection>();
+    public DbSet<ProductCatalogo>            ProductCatalogos            => Set<ProductCatalogo>();
     public DbSet<ProductCustomizationOption> ProductCustomizationOptions => Set<ProductCustomizationOption>();
 
     // ── Pedidos ────────────────────────────────────────────────────
@@ -35,9 +35,10 @@ public class AppDbContext : DbContext
     public DbSet<Delivery>               Deliveries              => Set<Delivery>();
 
     // ── Inventario ─────────────────────────────────────────────────
-    public DbSet<InventoryItem>     InventoryItems     => Set<InventoryItem>();
-    public DbSet<InventoryMovement> InventoryMovements => Set<InventoryMovement>();
-    public DbSet<ProductRecipe>     ProductRecipes     => Set<ProductRecipe>();
+    public DbSet<InventoryItem>          InventoryItems           => Set<InventoryItem>();
+    public DbSet<InventoryMovement>      InventoryMovements       => Set<InventoryMovement>();
+    public DbSet<InventoryDailySnapshot> InventoryDailySnapshots  => Set<InventoryDailySnapshot>();
+    public DbSet<ProductRecipe>          ProductRecipes           => Set<ProductRecipe>();
 
     // ── Operación técnica ──────────────────────────────────────────
     public DbSet<BackupJob>         BackupJobs         => Set<BackupJob>();
@@ -63,9 +64,9 @@ public class AppDbContext : DbContext
             e.HasKey(pc => new { pc.ProductId, pc.CategoryId });
         });
 
-        modelBuilder.Entity<ProductCollection>(e => {
-            e.ToTable("product_collections");
-            e.HasKey(pc => new { pc.ProductId, pc.CollectionId });
+        modelBuilder.Entity<ProductCatalogo>(e => {
+            e.ToTable("product_catalogos");
+            e.HasKey(pc => new { pc.ProductId, pc.CatalogoId });
         });
 
         modelBuilder.Entity<ProductCustomizationOption>(e => {

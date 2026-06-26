@@ -4,10 +4,10 @@ using FloreriaBautista.Services.Reports;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace FloreriaBautista.Controllers;
+namespace FloreriaBautista.Controllers.Admin;
 
 [ApiController]
-[Tags("Reportes")]
+[Tags("2. Operaciones y Ventas")]
 [Route("api/admin/reports")]
 [Authorize(Roles = "ADMIN")]
 public class AdminReportsController : ControllerBase

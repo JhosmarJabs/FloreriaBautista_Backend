@@ -21,7 +21,8 @@ public class StoreController : ControllerBase
             SocialMedia = new
             {
                 Facebook = "https://facebook.com/floreriabautista",
-                Instagram = "https://instagram.com/floreriabautista"
+                Instagram = "https://instagram.com/floreriabautista",
+                Whatsapp = "https://wa.me/521234567890"
             }
         };
 

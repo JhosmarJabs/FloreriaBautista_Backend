@@ -7,10 +7,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-namespace FloreriaBautista.Controllers;
+namespace FloreriaBautista.Controllers.Admin;
 
 [ApiController]
-[Tags("Administrador")]
+[Tags("2. Operaciones y Ventas")]
 [Route("api/admin/users")]
 [Authorize(Roles = "ADMIN")]
 public class AdminUsersController : ControllerBase
@@ -147,61 +147,50 @@ public class AdminUsersController : ControllerBase
         }));
     }
 
-    // POST /api/admin/users/{userId}/status — activar/desactivar
-    [HttpPost("{userId:guid}/status")]
-    public async Task<IActionResult> CambiarEstado(Guid userId, [FromBody] UpdateStatusRequestDto request)
-    {
-        var user = await _context.Users.FindAsync(userId);
-        if (user == null)
-            return NotFound(ApiResponseDto<object>.Fail($"Usuario '{userId}' no encontrado."));
-
-        user.Estado        = request.Activo ? "ACTIVO" : "INACTIVO";
-        user.ActualizadoEn = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
-
-        return Ok(ApiResponseDto<object>.Ok(null,
-            $"Usuario {(request.Activo ? "activado" : "desactivado")} correctamente."));
-    }
-
-    // POST /api/admin/users/{userId}/roles — actualizar roles
-    [HttpPost("{userId:guid}/roles")]
-    public async Task<IActionResult> ActualizarRoles(Guid userId, [FromBody] UpdateRolesRequestDto request)
+    // POST /api/admin/users/{userId:guid} — actualizar perfil, estado y roles (Admin)
+    [HttpPost("{userId:guid}")]
+    public async Task<IActionResult> Actualizar(Guid userId, [FromBody] UpdateUserRequestDto request)
     {
         var user = await _context.Users
-            .Include(u => u.UserRoles)
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
             .FirstOrDefaultAsync(u => u.Id == userId);
 
         if (user == null)
             return NotFound(ApiResponseDto<object>.Fail($"Usuario '{userId}' no encontrado."));
 
-        var rolesDb = await _context.Roles
-            .Where(r => request.Roles.Contains(r.Nombre))
-            .ToListAsync();
+        // 1. Actualización de datos básicos
+        if (request.Nombre != null) user.Nombre = request.Nombre.Trim();
+        if (request.Apellido != null) user.Apellido = request.Apellido.Trim();
+        if (request.Telefono != null) user.Telefono = request.Telefono;
+        if (request.Sexo != null) user.Sexo = request.Sexo;
+        if (request.FechaNacimiento != null) 
+            user.FechaNacimiento = DateOnly.FromDateTime(request.FechaNacimiento.Value);
 
-        if (rolesDb.Count != request.Roles.Count)
+        // 2. Estado (Borrado lógico)
+        if (request.Activo.HasValue)
+            user.Estado = request.Activo.Value ? "ACTIVO" : "INACTIVO";
+
+        // 3. Roles
+        if (request.Roles != null)
         {
-            var invalidos = request.Roles.Except(rolesDb.Select(r => r.Nombre));
-            return BadRequest(ApiResponseDto<object>.Fail(
-                $"Roles no encontrados: {string.Join(", ", invalidos)}"));
+            var rolesDb = await _context.Roles
+                .Where(r => request.Roles.Contains(r.Nombre))
+                .ToListAsync();
+
+            if (rolesDb.Count != request.Roles.Count)
+            {
+                var invalidos = request.Roles.Except(rolesDb.Select(r => r.Nombre));
+                return BadRequest(ApiResponseDto<object>.Fail($"Roles no encontrados: {string.Join(", ", invalidos)}"));
+            }
+
+            _context.RemoveRange(user.UserRoles);
+            foreach (var rol in rolesDb)
+                _context.Add(new UserRole { UserId = userId, RoleId = rol.Id });
         }
 
-        _context.RemoveRange(user.UserRoles);
-        foreach (var rol in rolesDb)
-            _context.Add(new FloreriaBautista.Models.Entities.UserRole
-                { UserId = userId, RoleId = rol.Id });
-
+        user.ActualizadoEn = DateTime.UtcNow;
         await _context.SaveChangesAsync();
-        return Ok(ApiResponseDto<object>.Ok(null, "Roles actualizados correctamente."));
+
+        return Ok(ApiResponseDto<object>.Ok(null, "Usuario actualizado correctamente."));
     }
-}
-
-public class UpdateStatusRequestDto
-{
-    public bool   Activo { get; set; }
-    public string? Motivo { get; set; }
-}
-
-public class UpdateRolesRequestDto
-{
-    public List<string> Roles { get; set; } = [];
 }

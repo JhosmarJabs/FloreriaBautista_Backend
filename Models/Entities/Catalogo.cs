@@ -1,6 +1,6 @@
 namespace FloreriaBautista.Models.Entities;
 
-public class Category
+public class Catalogo
 {
     public Guid     Id            { get; set; }
     public string   Nombre        { get; set; } = string.Empty;
@@ -11,5 +11,5 @@ public class Category
     public DateTime CreadoEn      { get; set; } = DateTime.UtcNow;
     public DateTime ActualizadoEn { get; set; } = DateTime.UtcNow;
 
-    public ICollection<ProductCategory> ProductCategories { get; set; } = [];
+    public ICollection<ProductCatalogo> ProductCatalogos { get; set; } = [];
 }

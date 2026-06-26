@@ -18,11 +18,11 @@ public class ProductsController : ControllerBase
     public async Task<IActionResult> Listar(
         [FromQuery] string? busqueda,
         [FromQuery] string? categoria,
-        [FromQuery] string? coleccion,
+        [FromQuery] string? catalogo,
         [FromQuery] int page = 1,
         [FromQuery] int size = 20)
     {
-        var resultado = await _productService.ListarPublicosAsync(busqueda, categoria, coleccion, page, size);
+        var resultado = await _productService.ListarPublicosAsync(busqueda, categoria, catalogo, page, size);
         return Ok(ApiResponseDto<PagedResultDto<ProductSummaryDto>>.Ok(resultado));
     }
 

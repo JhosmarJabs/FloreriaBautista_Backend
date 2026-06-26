@@ -13,9 +13,10 @@ public class ProductResponseDto
     public string?      ImagenUrl        { get; set; }
     public bool         Activo           { get; set; }
     public List<string> Categorias       { get; set; } = [];
-    public List<string> Colecciones      { get; set; } = [];
+    public List<string> Catalogos       { get; set; } = [];
     public List<RecipeItemDto> Receta    { get; set; } = [];
     public DateTime     CreadoEn         { get; set; }
+    public DateTime?    ActualizadoEn    { get; set; }
 }
 
 public class RecipeItemDto

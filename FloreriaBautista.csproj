@@ -5,6 +5,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="FloreriaBautista.Tests\**" />
+    <EmbeddedResource Remove="FloreriaBautista.Tests\**" />
+    <None Remove="FloreriaBautista.Tests\**" />
+    <Compile Remove="scratch\**" />
+    <EmbeddedResource Remove="scratch\**" />
+    <None Remove="scratch\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Datadog.Trace" Version="3.40.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />

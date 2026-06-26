@@ -23,7 +23,7 @@ public class ProductService : IProductService
     public async Task<PagedResultDto<ProductSummaryDto>> ListarPublicosAsync(
         string? busqueda,
         string? categoria,
-        string? coleccion,
+        string? catalogo,
         int page,
         int size
     )
@@ -31,8 +31,8 @@ public class ProductService : IProductService
         var query = _context
             .Products.Include(p => p.ProductCategories)
             .ThenInclude(pc => pc.Category)
-            .Include(p => p.ProductCollections)
-            .ThenInclude(pc => pc.Collection)
+            .Include(p => p.ProductCatalogos)
+            .ThenInclude(pc => pc.Catalogo)
             .Where(p => p.Activo && p.Estado == "ACTIVO" && p.Visibilidad != "SOLO_SUCURSAL")
             .AsQueryable();
 
@@ -46,10 +46,10 @@ public class ProductService : IProductService
                 p.ProductCategories.Any(pc => pc.Category.Nombre.ToLower() == categoria.ToLower())
             );
 
-        if (!string.IsNullOrWhiteSpace(coleccion))
+        if (!string.IsNullOrWhiteSpace(catalogo))
             query = query.Where(p =>
-                p.ProductCollections.Any(pc =>
-                    pc.Collection.Nombre.ToLower() == coleccion.ToLower()
+                p.ProductCatalogos.Any(pc =>
+                    pc.Catalogo.Nombre.ToLower() == catalogo.ToLower()
                 )
             );
 
@@ -87,8 +87,8 @@ public class ProductService : IProductService
             await _context
                 .Products.Include(p => p.ProductCategories)
                 .ThenInclude(pc => pc.Category)
-                .Include(p => p.ProductCollections)
-                .ThenInclude(pc => pc.Collection)
+                .Include(p => p.ProductCatalogos)
+                .ThenInclude(pc => pc.Catalogo)
                 .FirstOrDefaultAsync(p =>
                     p.Id == id
                     && p.Activo
@@ -96,8 +96,23 @@ public class ProductService : IProductService
                     && p.Visibilidad != "SOLO_SUCURSAL"
                 ) ?? throw new NotFoundException("Producto", id);
 
-        return MapToDto(p);
+        return MapToPublicDto(p);
     }
+
+    private static ProductResponseDto MapToPublicDto(Product p) =>
+        new()
+        {
+            Id = p.Id,
+            Nombre = p.Nombre,
+            Descripcion = p.Descripcion,
+            PrecioBase = p.PrecioBase,
+            Tipo = p.Tipo,
+            EsPersonalizable = p.EsPersonalizable,
+            Visibilidad = p.Visibilidad,
+            ImagenUrl = p.ImagenUrl,
+            Categorias = (p.ProductCategories ?? []).Select(pc => pc.Category?.Nombre ?? "Categoría").ToList(),
+            Catalogos = (p.ProductCatalogos ?? []).Select(pc => pc.Catalogo?.Nombre ?? "Catálogo").ToList(),
+        };
 
     // ── Detalle admin ─────────────────────────────────────────────
     public async Task<ProductResponseDto> ObtenerAdminAsync(Guid id)
@@ -106,8 +121,10 @@ public class ProductService : IProductService
             await _context
                 .Products.Include(p => p.ProductCategories)
                 .ThenInclude(pc => pc.Category)
-                .Include(p => p.ProductCollections)
-                .ThenInclude(pc => pc.Collection)
+                .Include(p => p.ProductCatalogos)
+                .ThenInclude(pc => pc.Catalogo)
+                .Include(p => p.ProductRecipes)
+                .ThenInclude(pr => pr.InventoryItem)
                 .FirstOrDefaultAsync(p => p.Id == id && p.Activo)
             ?? throw new NotFoundException("Producto", id);
 
@@ -172,29 +189,35 @@ public class ProductService : IProductService
             Visibilidad = request.Visibilidad.Trim().ToUpper(),
             ImagenUrl = request.ImagenUrl,
             CreadoEn = DateTime.UtcNow,
+            ActualizadoEn = DateTime.UtcNow,
         };
 
         await AsignarCategorias(producto, request.Categorias);
-        await AsignarColecciones(producto, request.Colecciones);
+        await AsignarCatalogos(producto, request.Catalogos);
         await AsignarReceta(producto, request.Receta);
 
         _context.Products.Add(producto);
         await _context.SaveChangesAsync();
         _logger.LogInformation("Producto creado: {Nombre} ({Id})", producto.Nombre, producto.Id);
 
+        // Forzar recarga de navegación para el DTO de respuesta
+        _context.Entry(producto).State = EntityState.Detached;
         return await ObtenerConDetalleAsync(producto.Id);
     }
 
     // ── Actualizar ────────────────────────────────────────────────
     public async Task<ProductResponseDto> ActualizarAsync(Guid id, UpdateProductRequestDto request)
     {
+        Console.WriteLine($"[ProductService] Actualizando producto con ID: {id}");
         var producto =
             await _context.Products
                 .Include(p => p.ProductCategories).ThenInclude(pc => pc.Category)
-                .Include(p => p.ProductCollections).ThenInclude(pc => pc.Collection)
+                .Include(p => p.ProductCatalogos).ThenInclude(pc => pc.Catalogo)
                 .Include(p => p.ProductRecipes).ThenInclude(pr => pr.InventoryItem)
                 .FirstOrDefaultAsync(p => p.Id == id)
             ?? throw new NotFoundException("Producto", id);
+
+        Console.WriteLine($"[ProductService] Producto cargado: {producto.Nombre} (ID: {producto.Id}). Categorías: {producto.ProductCategories.Count}, Catálogos: {producto.ProductCatalogos.Count}, Insumos en Receta: {producto.ProductRecipes.Count}");
 
         // Actualizar propiedades básicas
         if (!string.IsNullOrWhiteSpace(request.Nombre))
@@ -216,7 +239,9 @@ public class ProductService : IProductService
         if (request.Activo.HasValue)
             producto.Activo = request.Activo.Value;
 
-        // 1. Actualizar Categorías (Sincronización quirúrgica por ID)
+        producto.ActualizadoEn = DateTime.UtcNow;
+
+        // 1. Actualizar Categorías (Sincronización vía colección navegacional)
         if (request.Categorias != null)
         {
             var nombresLimpios = request.Categorias
@@ -230,15 +255,15 @@ public class ProductService : IProductService
                 .ToListAsync();
 
             var idsDeseadas = categoriasDb.Select(c => c.Id).ToList();
-            var idsActuales = producto.ProductCategories.Select(pc => pc.CategoryId).ToList();
-
-            // Eliminar las que ya no deben estar
+            
+            // Eliminar las que ya no deben estar (usando la colección para que EF detecte el cambio)
             var aEliminar = producto.ProductCategories
                 .Where(pc => !idsDeseadas.Contains(pc.CategoryId))
                 .ToList();
-            foreach (var pc in aEliminar) _context.ProductCategories.Remove(pc);
+            foreach (var pc in aEliminar) producto.ProductCategories.Remove(pc);
 
             // Agregar solo las que no existían
+            var idsActuales = producto.ProductCategories.Select(pc => pc.CategoryId).ToList();
             var aAgregarIds = idsDeseadas.Except(idsActuales);
             foreach (var catId in aAgregarIds)
             {
@@ -246,50 +271,51 @@ public class ProductService : IProductService
             }
         }
 
-        // 2. Actualizar Colecciones (Sincronización quirúrgica por ID)
-        if (request.Colecciones != null)
+        // 2. Actualizar Catálogos
+        if (request.Catalogos != null)
         {
-            var nombresLimpios = request.Colecciones
+            var nombresLimpios = request.Catalogos
                 .Where(n => !string.IsNullOrWhiteSpace(n))
                 .Select(n => n.Trim().ToLower())
                 .Distinct()
                 .ToList();
 
-            var coleccionesDb = await _context.Collections
+            var catalogosDb = await _context.Catalogos
                 .Where(c => nombresLimpios.Contains(c.Nombre.ToLower()))
                 .ToListAsync();
 
-            var idsDeseadas = coleccionesDb.Select(c => c.Id).ToList();
-            var idsActuales = producto.ProductCollections.Select(pc => pc.CollectionId).ToList();
+            var idsDeseadas = catalogosDb.Select(c => c.Id).ToList();
 
             // Eliminar
-            var aEliminar = producto.ProductCollections
-                .Where(pc => !idsDeseadas.Contains(pc.CollectionId))
+            var aEliminar = producto.ProductCatalogos
+                .Where(pc => !idsDeseadas.Contains(pc.CatalogoId))
                 .ToList();
-            foreach (var pc in aEliminar) _context.ProductCollections.Remove(pc);
+            foreach (var pc in aEliminar) producto.ProductCatalogos.Remove(pc);
 
             // Agregar
+            var idsActuales = producto.ProductCatalogos.Select(pc => pc.CatalogoId).ToList();
             var aAgregarIds = idsDeseadas.Except(idsActuales);
-            foreach (var colId in aAgregarIds)
+            foreach (var catId in aAgregarIds)
             {
-                producto.ProductCollections.Add(new ProductCollection { ProductId = producto.Id, CollectionId = colId });
+                producto.ProductCatalogos.Add(new ProductCatalogo { ProductId = producto.Id, CatalogoId = catId });
             }
         }
 
-        // 3. Actualizar Receta (Mantenimiento de IDs de Receta)
+        // 3. Actualizar Receta
         if (request.Receta != null)
         {
             var idsDeseadas = request.Receta.Select(r => r.InventoryItemId).ToList();
-            var actualesReceta = producto.ProductRecipes.ToList();
-
-            // Eliminar ausentes
-            var aEliminar = actualesReceta.Where(r => !idsDeseadas.Contains(r.InventoryItemId)).ToList();
-            foreach (var r in aEliminar) _context.ProductRecipes.Remove(r);
+            
+            // Eliminar
+            var aEliminar = producto.ProductRecipes
+                .Where(r => !idsDeseadas.Contains(r.InventoryItemId))
+                .ToList();
+            foreach (var r in aEliminar) producto.ProductRecipes.Remove(r);
 
             // Actualizar o Agregar
             foreach (var itemReq in request.Receta)
             {
-                var existente = actualesReceta.FirstOrDefault(r => r.InventoryItemId == itemReq.InventoryItemId);
+                var existente = producto.ProductRecipes.FirstOrDefault(r => r.InventoryItemId == itemReq.InventoryItemId);
                 if (existente != null)
                 {
                     existente.CantidadRequerida = itemReq.Cantidad;
@@ -311,16 +337,50 @@ public class ProductService : IProductService
         {
             await _context.SaveChangesAsync();
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateConcurrencyException ex)
         {
-            if (!_context.Products.Any(p => p.Id == id))
+            // Si el producto fue borrado físicamente por otro proceso
+            if (!await _context.Products.AnyAsync(p => p.Id == id))
                 throw new NotFoundException("Producto", id);
-            throw;
+
+            _logger.LogWarning("Conflicto de concurrencia al actualizar producto {Id}. Refrescando entidades...", id);
+
+            // Refrescar las entidades conflictivas con los valores reales de la BD
+            foreach (var entry in ex.Entries)
+            {
+                var dbValues = await entry.GetDatabaseValuesAsync();
+                if (dbValues == null)
+                {
+                    // La fila ya no existe en la BD, dejar de rastrearla
+                    entry.State = EntityState.Detached;
+                }
+                else
+                {
+                    // Sobrescribir los valores originales con los de la BD para resolver el conflicto
+                    entry.OriginalValues.SetValues(dbValues);
+                }
+            }
+
+            // Reintentar el guardado una vez
+            try
+            {
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Reintento exitoso para producto {Id}", id);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                _logger.LogError("Reintento fallido para producto {Id}. El conflicto persiste.", id);
+                throw new AppException("No se pudo actualizar el producto. Intenta recargar la página y volver a editarlo.");
+            }
         }
 
         _logger.LogInformation("Producto actualizado correctamente: {Id}", id);
+        
+        // Forzar recarga de navegación para el DTO de respuesta
+        _context.Entry(producto).State = EntityState.Detached;
         return await ObtenerConDetalleAsync(id);
     }
+
 
     public async Task EliminarAsync(Guid id)
     {
@@ -347,16 +407,16 @@ public class ProductService : IProductService
         }
     }
 
-    private async Task AsignarColecciones(Product producto, List<string> nombres)
+    private async Task AsignarCatalogos(Product producto, List<string> nombres)
     {
         foreach (var nombre in nombres)
         {
-            var col = await _context.Collections.FirstOrDefaultAsync(c =>
+            var cat = await _context.Catalogos.FirstOrDefaultAsync(c =>
                 c.Nombre.ToLower() == nombre.ToLower().Trim()
             );
-            if (col != null)
-                producto.ProductCollections.Add(
-                    new ProductCollection { ProductId = producto.Id, CollectionId = col.Id }
+            if (cat != null)
+                producto.ProductCatalogos.Add(
+                    new ProductCatalogo { ProductId = producto.Id, CatalogoId = cat.Id }
                 );
         }
     }
@@ -382,8 +442,8 @@ public class ProductService : IProductService
         var p = await _context
             .Products.Include(p => p.ProductCategories)
             .ThenInclude(pc => pc.Category)
-            .Include(p => p.ProductCollections)
-            .ThenInclude(pc => pc.Collection)
+            .Include(p => p.ProductCatalogos)
+            .ThenInclude(pc => pc.Catalogo)
             .Include(p => p.ProductRecipes)
             .ThenInclude(pr => pr.InventoryItem)
             .FirstAsync(p => p.Id == id);
@@ -403,18 +463,19 @@ public class ProductService : IProductService
             Visibilidad = p.Visibilidad,
             ImagenUrl = p.ImagenUrl,
             Activo = p.Activo,
-            Categorias = p.ProductCategories.Select(pc => pc.Category.Nombre).ToList(),
-            Colecciones = p.ProductCollections.Select(pc => pc.Collection.Nombre).ToList(),
-            Receta = p
-                .ProductRecipes.Select(pr => new RecipeItemDto
+            Categorias = (p.ProductCategories ?? []).Select(pc => pc.Category?.Nombre ?? "Categoría Pendiente").ToList(),
+            Catalogos = (p.ProductCatalogos ?? []).Select(pc => pc.Catalogo?.Nombre ?? "Catálogo Pendiente").ToList(),
+            Receta = (p.ProductRecipes ?? [])
+                .Select(pr => new RecipeItemDto
                 {
                     InventoryItemId = pr.InventoryItemId,
-                    Nombre = pr.InventoryItem.Nombre,
+                    Nombre = pr.InventoryItem?.Nombre ?? "Insumo no encontrado",
                     Cantidad = pr.CantidadRequerida,
-                    PrecioCosto = pr.InventoryItem.PrecioCosto,
-                    EsFlorPrimaria = pr.InventoryItem.EsFlorPrimaria,
+                    PrecioCosto = pr.InventoryItem?.PrecioCosto ?? 0,
+                    EsFlorPrimaria = pr.InventoryItem?.EsFlorPrimaria ?? false,
                 })
                 .ToList(),
             CreadoEn = p.CreadoEn,
+            ActualizadoEn = p.ActualizadoEn
         };
 }

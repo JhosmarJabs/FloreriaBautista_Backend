@@ -246,6 +246,104 @@ public class InventoryService : IInventoryService
         };
     }
 
+    // ── Historial y Predicción ────────────────────────────────────
+    public async Task RegistrarSnapshotDiarioAsync()
+    {
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        
+        // Evitar duplicados del mismo día
+        var existe = await _context.InventoryDailySnapshots.AnyAsync(s => s.Fecha == hoy);
+        if (existe) {
+            _logger.LogWarning("Ya existe un snapshot para la fecha {Fecha}. Omitiendo.", hoy);
+            return;
+        }
+
+        var items = await _context.InventoryItems.Where(i => i.Activo).ToListAsync();
+        var inicioDia = hoy.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var finDia    = hoy.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc);
+
+        foreach (var item in items)
+        {
+            var movimientosHoy = await _context.InventoryMovements
+                .Where(m => m.InventoryItemId == item.Id && m.FechaHora >= inicioDia && m.FechaHora <= finDia)
+                .ToListAsync();
+
+            var snapshot = new InventoryDailySnapshot
+            {
+                Id               = Guid.NewGuid(),
+                InventoryItemId  = item.Id,
+                Fecha            = hoy,
+                StockFinal       = item.StockActual,
+                CantidadVendida  = movimientosHoy.Where(m => m.TipoMovimiento == "SALIDA").Sum(m => m.Cantidad),
+                CantidadRecibida = movimientosHoy.Where(m => m.TipoMovimiento == "ENTRADA").Sum(m => m.Cantidad)
+            };
+
+            _context.InventoryDailySnapshots.Add(snapshot);
+        }
+
+        await _context.SaveChangesAsync();
+        _logger.LogInformation("Snapshot diario completado para {Fecha} ({Count} items)", hoy, items.Count);
+    }
+
+    public async Task<InventoryHistoryDto> ObtenerHistorialAsync(Guid inventoryItemId)
+    {
+        var item = await _context.InventoryItems.FindAsync(inventoryItemId)
+            ?? throw new NotFoundException("InventoryItem", inventoryItemId);
+
+        var snapshots = await _context.InventoryDailySnapshots
+            .Where(s => s.InventoryItemId == inventoryItemId)
+            .OrderBy(s => s.Fecha)
+            .ToListAsync();
+
+        var result = new InventoryHistoryDto();
+
+        // 1. Diario (últimos 30 días)
+        result.Diario = snapshots.TakeLast(30).Select(s => new DailyHistoryDto
+        {
+            Date     = s.Fecha.ToString("yyyy-MM-dd"),
+            Stock    = s.StockFinal,
+            Consumed = s.CantidadVendida,
+            Nota     = s.CantidadRecibida > 0 ? $"Reabasto (+{s.CantidadRecibida})" : null
+        }).ToList();
+
+        // 2. Semanal (Agrupado por semana ISO)
+        result.Semanal = snapshots
+            .GroupBy(s => {
+                var day = s.Fecha.ToDateTime(TimeOnly.MinValue);
+                var week = System.Globalization.ISOWeek.GetWeekOfYear(day);
+                return $"{day.Year}-W{week:D2}";
+            })
+            .Select(g => new WeeklyHistoryDto
+            {
+                Week     = g.Key,
+                Label    = $"Sem {g.Key.Split("-W")[1]}",
+                Consumed = g.Sum(s => s.CantidadVendida),
+                Restock  = g.Sum(s => s.CantidadRecibida),
+                Merma    = 0 // TODO: Implementar lógica de merma si se requiere
+            })
+            .ToList();
+
+        // 3. Mensual
+        result.Mensual = snapshots
+            .GroupBy(s => s.Fecha.ToString("yyyy-MM"))
+            .Select(g => {
+                var totalConsumed = g.Sum(s => s.CantidadVendida);
+                var weeksCount    = g.Select(s => System.Globalization.ISOWeek.GetWeekOfYear(s.Fecha.ToDateTime(TimeOnly.MinValue))).Distinct().Count();
+                
+                return new MonthlyHistoryDto
+                {
+                    Month         = g.Key,
+                    Label         = g.First().Fecha.ToString("MMMM yyyy", new System.Globalization.CultureInfo("es-MX")),
+                    TotalConsumed = totalConsumed,
+                    TotalRestock  = g.Sum(s => s.CantidadRecibida),
+                    AvgWeekly     = weeksCount > 0 ? (decimal)totalConsumed / weeksCount : 0
+                };
+            })
+            .ToList();
+
+        return result;
+    }
+
     private static InventoryItemDto MapToDto(InventoryItem i) => new()
     {
         Id           = i.Id,
@@ -261,3 +359,4 @@ public class InventoryService : IInventoryService
         Activo       = i.Activo
     };
 }
+
