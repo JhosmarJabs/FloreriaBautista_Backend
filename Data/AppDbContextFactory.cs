@@ -53,8 +53,8 @@ public class AppDbContextFactory
         $"Host={Env("DB_HOST")};"      +
         $"Port={Env("DB_PORT")};"      +
         $"Database={Env("DB_NAME")};"  +
-        $"Username={Env("DB_USER")};"  +
-        $"Password={Env("DB_PASSWORD")}";
+        $"Username={Env("DB_ADMIN_USER")};"  +
+        $"Password={Env("DB_ADMIN_PASSWORD")}";
 
     private static string Env(string key) =>
         Environment.GetEnvironmentVariable(key)

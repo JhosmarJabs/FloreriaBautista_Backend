@@ -278,8 +278,8 @@ public class BackupService : IBackupService
         var host     = Env("DB_HOST");
         var port     = Env("DB_PORT");
         var database = Env("DB_NAME");
-        var user     = Environment.GetEnvironmentVariable("BACKUP_DB_USER") ?? Env("DB_USER");
-        var password = Environment.GetEnvironmentVariable("BACKUP_DB_PASSWORD") ?? Env("DB_PASSWORD");
+        var user     = Environment.GetEnvironmentVariable("BACKUP_DB_USER") ?? Env("DB_ADMIN_USER");
+        var password = Environment.GetEnvironmentVariable("BACKUP_DB_PASSWORD") ?? Env("DB_ADMIN_PASSWORD");
 
         // -F c = custom (restaurable con pg_restore) | -F p = plain SQL
         var flag = formato == "SQL" ? "-F p" : "-F c";
@@ -324,8 +324,8 @@ public class BackupService : IBackupService
         var host     = Env("DB_HOST");
         var port     = Env("DB_PORT");
         var database = Env("DB_NAME");
-        var user     = Environment.GetEnvironmentVariable("BACKUP_DB_USER") ?? Env("DB_USER");
-        var password = Environment.GetEnvironmentVariable("BACKUP_DB_PASSWORD") ?? Env("DB_PASSWORD");
+        var user     = Environment.GetEnvironmentVariable("BACKUP_DB_USER") ?? Env("DB_ADMIN_USER");
+        var password = Environment.GetEnvironmentVariable("BACKUP_DB_PASSWORD") ?? Env("DB_ADMIN_PASSWORD");
         return new NpgsqlConnection(
             $"Host={host};Port={port};Database={database};Username={user};Password={password};Search Path=public");
     }

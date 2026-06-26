@@ -15,21 +15,52 @@ public class AlexaController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ReportsService _reportsService;
 
+    // Caché en memoria de productos activos (ID y Nombre)
+    private static List<(Guid Id, string Nombre)>? _productosEnMemoria;
+    private static readonly object _lock = new object();
+
     public AlexaController(AppDbContext context, ReportsService reportsService)
     {
         _context = context;
         _reportsService = reportsService;
     }
 
+    private async Task AsegurarCacheProductosAsync(bool forzarRefresco = false)
+    {
+        if (_productosEnMemoria == null || forzarRefresco)
+        {
+            var items = await _context.Products
+                .Where(p => p.Estado == "ACTIVO")
+                .Select(p => new { p.Id, p.Nombre })
+                .ToListAsync();
+
+            lock (_lock)
+            {
+                _productosEnMemoria = items.Select(x => (x.Id, x.Nombre)).ToList();
+            }
+        }
+    }
+
     // GET /api/alexa/products?busqueda=rosa
     [HttpGet("products")]
     public async Task<IActionResult> GetProducts([FromQuery] string? busqueda)
     {
+        // Si no hay parámetro de búsqueda, forzamos la actualización del caché en memoria
+        bool forzarRefresco = string.IsNullOrWhiteSpace(busqueda);
+        await AsegurarCacheProductosAsync(forzarRefresco);
+
         var query = _context.Products.Where(p => p.Estado == "ACTIVO");
         
         if (!string.IsNullOrWhiteSpace(busqueda))
         {
-            query = query.Where(p => p.Nombre.ToLower().Contains(busqueda.ToLower()));
+            // Filtrar en memoria los productos que coincidan parcialmente con la búsqueda para obtener sus IDs
+            var idsCoincidentes = _productosEnMemoria!
+                .Where(p => p.Nombre.Contains(busqueda, StringComparison.OrdinalIgnoreCase))
+                .Select(p => p.Id)
+                .ToList();
+
+            // Consultar a la base de datos por ID en lugar de filtrar por texto
+            query = query.Where(p => idsCoincidentes.Contains(p.Id));
         }
 
         var items = await query

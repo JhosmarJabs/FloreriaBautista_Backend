@@ -94,8 +94,8 @@ public static class ServiceExtensions
         $"Host={Env("DB_HOST")};" +
         $"Port={Env("DB_PORT")};" +
         $"Database={Env("DB_NAME")};" +
-        $"Username={Env("DB_USER")};" +
-        $"Password={Env("DB_PASSWORD")}" +
+        $"Username={Env("DB_ADMIN_USER")};" +
+        $"Password={Env("DB_ADMIN_PASSWORD")}" +
         "Search Path=public;Include Error Detail=true";
 
     private static string Env(string key) =>
