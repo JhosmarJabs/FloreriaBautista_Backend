@@ -94,9 +94,29 @@ public static class ServiceExtensions
         $"Host={Env("DB_HOST")};" +
         $"Port={Env("DB_PORT")};" +
         $"Database={Env("DB_NAME")};" +
-        $"Username={Env("DB_ADMIN_USER")};" +
-        $"Password={Env("DB_ADMIN_PASSWORD")}" +
+        $"Username={GetAdminUser()};" +
+        $"Password={GetAdminPassword()};" +
         "Search Path=public;Include Error Detail=true";
+
+    private static string GetAdminUser()
+    {
+        var adminUser = Environment.GetEnvironmentVariable("DB_ADMIN_USER");
+        if (string.IsNullOrEmpty(adminUser) || adminUser == "app_user_admin")
+        {
+            return Env("DB_USER");
+        }
+        return adminUser;
+    }
+
+    private static string GetAdminPassword()
+    {
+        var adminPass = Environment.GetEnvironmentVariable("DB_ADMIN_PASSWORD");
+        if (string.IsNullOrEmpty(adminPass) || adminPass == "Cambiar_antes_despliegue_Admin2025!")
+        {
+            return Env("DB_PASSWORD");
+        }
+        return adminPass;
+    }
 
     private static string Env(string key) =>
         Environment.GetEnvironmentVariable(key)
