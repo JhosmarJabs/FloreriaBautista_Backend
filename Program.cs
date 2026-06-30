@@ -56,6 +56,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("DefaultPolicy"); 
 app.UseHttpsRedirection();
+app.UseMiddleware<AlexaApiKeyMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
