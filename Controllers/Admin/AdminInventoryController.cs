@@ -15,6 +15,14 @@ public class AdminInventoryController : ControllerBase
     private readonly IInventoryService _inventoryService;
     public AdminInventoryController(IInventoryService inventoryService) => _inventoryService = inventoryService;
 
+    // GET /api/admin/inventory/kpis
+    [HttpGet("kpis")]
+    public async Task<IActionResult> ObtenerKpis()
+    {
+        var kpis = await _inventoryService.ObtenerKpisAsync();
+        return Ok(ApiResponseDto<InventoryKpisDto>.Ok(kpis));
+    }
+
     // GET /api/admin/inventory?sucursal=PRINCIPAL&bajoMinimo=true&busqueda=rosa
     [HttpGet]
     public async Task<IActionResult> Listar(

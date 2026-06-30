@@ -344,6 +344,186 @@ public class InventoryService : IInventoryService
         return result;
     }
 
+    public async Task<InventoryKpisDto> ObtenerKpisAsync()
+    {
+        var query = _context.InventoryItems.Where(i => i.Activo);
+
+        var totalRegistros = await query.CountAsync();
+        var bajoMinimo = await query.CountAsync(i => i.StockActual <= i.StockMinimo);
+        var sumaAlCosto = await query.CountAsync(i => i.SumaAlCosto);
+        var sucursales = await query
+            .Where(i => !string.IsNullOrEmpty(i.Sucursal))
+            .Select(i => i.Sucursal)
+            .Distinct()
+            .CountAsync();
+
+        return new InventoryKpisDto
+        {
+            TotalRegistros = totalRegistros,
+            BajoMinimo     = bajoMinimo,
+            SumaAlCosto    = sumaAlCosto,
+            Sucursales     = sucursales
+        };
+    }
+
+    public async Task<InventoryItemDto?> ResolverCoincidenciaInsumoAsync(string termino)
+    {
+        if (string.IsNullOrWhiteSpace(termino)) return null;
+
+        var items = await _context.InventoryItems
+            .Where(i => i.Activo)
+            .ToListAsync();
+
+        if (!items.Any()) return null;
+
+        var terminoNorm = NormalizarTexto(termino);
+        if (string.IsNullOrEmpty(terminoNorm)) return null;
+
+        var matches = new List<(InventoryItem Item, double Score)>();
+
+        foreach (var item in items)
+        {
+            var nombreNorm = NormalizarTexto(item.Nombre);
+            if (string.IsNullOrEmpty(nombreNorm)) continue;
+
+            // 1. Coincidencia exacta
+            if (nombreNorm == terminoNorm)
+            {
+                matches.Add((item, 1.0));
+                continue;
+            }
+
+            // 2. Coincidencia por subcadena mutua
+            if (nombreNorm.Contains(terminoNorm) || terminoNorm.Contains(nombreNorm))
+            {
+                double ratio = (double)Math.Min(nombreNorm.Length, terminoNorm.Length) / Math.Max(nombreNorm.Length, terminoNorm.Length);
+                matches.Add((item, 0.8 + (ratio * 0.15))); 
+                continue;
+            }
+
+            // 3. Coincidencia por palabras clave (tokens) y des-pluralización
+            var tokensTermino = ObtenerTokensNormalizados(terminoNorm);
+            var tokensNombre = ObtenerTokensNormalizados(nombreNorm);
+
+            if (tokensTermino.Count == 0 || tokensNombre.Count == 0) continue;
+
+            int palabrasCoincidentes = 0;
+            foreach (var tokenT in tokensTermino)
+            {
+                if (tokensNombre.Contains(tokenT))
+                {
+                    palabrasCoincidentes++;
+                }
+            }
+
+            if (palabrasCoincidentes > 0)
+            {
+                double scorePalabras = (double)palabrasCoincidentes / Math.Max(tokensTermino.Count, tokensNombre.Count);
+                matches.Add((item, scorePalabras * 0.7));
+                continue;
+            }
+
+            // 4. Distancia de Levenshtein para variaciones menores
+            int dist = LevenshteinDistance(terminoNorm, nombreNorm);
+            int maxLen = Math.Max(terminoNorm.Length, nombreNorm.Length);
+            double similarity = 1.0 - ((double)dist / maxLen);
+
+            if (similarity >= 0.45) 
+            {
+                matches.Add((item, similarity * 0.5));
+            }
+        }
+
+        if (!matches.Any()) return null;
+
+        var mejorMatch = matches
+            .OrderByDescending(m => m.Score)
+            .ThenBy(m => m.Item.Nombre.Length)
+            .First();
+
+        if (mejorMatch.Score < 0.35)
+        {
+            return null;
+        }
+
+        return MapToDto(mejorMatch.Item);
+    }
+
+    private static string NormalizarTexto(string texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto)) return string.Empty;
+
+        var t = texto.ToLower().Trim();
+
+        var normalizedString = t.Normalize(System.Text.NormalizationForm.FormD);
+        var stringBuilder = new System.Text.StringBuilder();
+
+        foreach (var c in normalizedString)
+        {
+            var unicodeCategory = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
+            if (unicodeCategory != System.Globalization.UnicodeCategory.NonSpacingMark)
+            {
+                stringBuilder.Append(c);
+            }
+        }
+
+        t = stringBuilder.ToString().Normalize(System.Text.NormalizationForm.FormC);
+        t = System.Text.RegularExpressions.Regex.Replace(t, @"[^a-z0-9\s]", "");
+
+        return t;
+    }
+
+    private static List<string> ObtenerTokensNormalizados(string textoNorm)
+    {
+        var palabras = textoNorm.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+        var stopWords = new HashSet<string> { "de", "del", "la", "las", "el", "los", "un", "una", "y", "con", "en", "para", "por" };
+        var tokens = new List<string>();
+
+        foreach (var p in palabras)
+        {
+            if (stopWords.Contains(p)) continue;
+
+            var token = p;
+            if (token.EndsWith("es") && token.Length > 4)
+            {
+                token = token.Substring(0, token.Length - 2);
+            }
+            else if (token.EndsWith("s") && token.Length > 3 && !token.EndsWith("is") && !token.EndsWith("us"))
+            {
+                token = token.Substring(0, token.Length - 1);
+            }
+
+            tokens.Add(token);
+        }
+
+        return tokens;
+    }
+
+    private static int LevenshteinDistance(string s, string t)
+    {
+        if (string.IsNullOrEmpty(s)) return string.IsNullOrEmpty(t) ? 0 : t.Length;
+        if (string.IsNullOrEmpty(t)) return s.Length;
+
+        int n = s.Length;
+        int m = t.Length;
+        int[,] d = new int[n + 1, m + 1];
+
+        for (int i = 0; i <= n; d[i, 0] = i++) { }
+        for (int j = 0; j <= m; d[0, j] = j++) { }
+
+        for (int i = 1; i <= n; i++)
+        {
+            for (int j = 1; j <= m; j++)
+            {
+                int cost = (t[j - 1] == s[i - 1]) ? 0 : 1;
+                d[i, j] = Math.Min(
+                    Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
+                    d[i - 1, j - 1] + cost);
+            }
+        }
+        return d[n, m];
+    }
+
     private static InventoryItemDto MapToDto(InventoryItem i) => new()
     {
         Id           = i.Id,

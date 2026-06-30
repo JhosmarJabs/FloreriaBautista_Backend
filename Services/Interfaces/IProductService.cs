@@ -12,4 +12,5 @@ public interface IProductService
     Task<ProductResponseDto>               CrearAsync(CreateProductRequestDto request);
     Task<ProductResponseDto>               ActualizarAsync(Guid id, UpdateProductRequestDto request);
     Task                                   EliminarAsync(Guid id);
+    Task<ProductKpisDto>                   ObtenerKpisAsync();
 }

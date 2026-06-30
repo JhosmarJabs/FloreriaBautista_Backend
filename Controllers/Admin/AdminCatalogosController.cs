@@ -1,5 +1,6 @@
 using FloreriaBautista.Data;
 using FloreriaBautista.Models.DTOs.Common;
+using FloreriaBautista.Models.DTOs.Products;
 using FloreriaBautista.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -29,6 +30,31 @@ public class AdminCatalogosController : ControllerBase
             .OrderBy(x => x.Nombre)
             .ToListAsync();
         return Ok(ApiResponseDto<List<Catalogo>>.Ok(items));
+    }
+
+    // GET /api/admin/catalogos/kpis
+    [HttpGet("kpis")]
+    public async Task<IActionResult> ObtenerKpis()
+    {
+        var queryCatalogos = _context.Catalogos.Where(c => c.Activo);
+
+        var totalCatalogos = await queryCatalogos.CountAsync();
+        var catalogosActivos = await queryCatalogos.CountAsync(c => c.Estado == "ACTIVA");
+
+        var totalProductosListados = await _context.ProductCatalogos
+            .Where(pc => pc.Catalogo.Activo && pc.Product.Activo)
+            .Select(pc => pc.ProductId)
+            .Distinct()
+            .CountAsync();
+
+        var kpis = new CatalogoKpisDto
+        {
+            TotalCatalogos = totalCatalogos,
+            CatalogosActivos = catalogosActivos,
+            TotalProductosListados = totalProductosListados
+        };
+
+        return Ok(ApiResponseDto<CatalogoKpisDto>.Ok(kpis));
     }
 
     // GET /api/admin/catalogos/{id}

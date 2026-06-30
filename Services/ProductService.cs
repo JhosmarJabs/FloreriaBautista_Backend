@@ -392,6 +392,22 @@ public class ProductService : IProductService
         _logger.LogInformation("Producto desactivado (borrado lógico): {Id}", id);
     }
 
+    public async Task<ProductKpisDto> ObtenerKpisAsync()
+    {
+        var query = _context.Products.Where(p => p.Activo);
+
+        var totalProductos = await query.CountAsync();
+        var activos = await query.CountAsync(p => p.Estado == "ACTIVO");
+        var borradores = await query.CountAsync(p => p.Estado == "BORRADOR");
+
+        return new ProductKpisDto
+        {
+            TotalProductos = totalProductos,
+            Activos = activos,
+            Borradores = borradores
+        };
+    }
+
     // ── Helpers ───────────────────────────────────────────────────
     private async Task AsignarCategorias(Product producto, List<string> nombres)
     {

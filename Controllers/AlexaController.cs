@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using FloreriaBautista.Data;
 using FloreriaBautista.Services.Reports;
+using FloreriaBautista.Services.Interfaces;
 using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Models.DTOs.Inventory;
 
@@ -16,31 +17,13 @@ public class AlexaController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly ReportsService _reportsService;
+    private readonly IInventoryService _inventoryService;
 
-    // Caché en memoria de insumos activos (ID y Nombre)
-    private static List<(Guid Id, string Nombre)>? _insumosEnMemoria;
-    private static readonly object _lock = new object();
-
-    public AlexaController(AppDbContext context, ReportsService reportsService)
+    public AlexaController(AppDbContext context, ReportsService reportsService, IInventoryService inventoryService)
     {
         _context = context;
         _reportsService = reportsService;
-    }
-
-    private async Task AsegurarCacheInsumosAsync(bool forzarRefresco = false)
-    {
-        if (_insumosEnMemoria == null || forzarRefresco)
-        {
-            var items = await _context.InventoryItems
-                .Where(i => i.Activo)
-                .Select(i => new { i.Id, i.Nombre })
-                .ToListAsync();
-
-            lock (_lock)
-            {
-                _insumosEnMemoria = items.Select(x => (x.Id, x.Nombre)).ToList();
-            }
-        }
+        _inventoryService = inventoryService;
     }
 
     // GET /api/alexa/inventory
@@ -52,9 +35,6 @@ public class AlexaController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int size = 20)
     {
-        bool forzarRefresco = string.IsNullOrWhiteSpace(busqueda);
-        await AsegurarCacheInsumosAsync(forzarRefresco);
-
         var query = _context.InventoryItems.Where(i => i.Activo);
 
         if (!string.IsNullOrWhiteSpace(sucursal))
@@ -69,12 +49,7 @@ public class AlexaController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(busqueda))
         {
-            var idsCoincidentes = _insumosEnMemoria!
-                .Where(i => i.Nombre.Contains(busqueda, StringComparison.OrdinalIgnoreCase))
-                .Select(i => i.Id)
-                .ToList();
-
-            query = query.Where(i => idsCoincidentes.Contains(i.Id));
+            query = query.Where(i => i.Nombre.ToLower().Contains(busqueda.ToLower()));
         }
 
         var total = await query.CountAsync();
@@ -132,6 +107,24 @@ public class AlexaController : ControllerBase
             })
             .FirstOrDefaultAsync();
 
+        if (item == null)
+        {
+            return NotFound(ApiResponseDto<object>.Fail("Insumo no encontrado."));
+        }
+
+        return Ok(ApiResponseDto<InventoryItemDto>.Ok(item));
+    }
+
+    // GET /api/alexa/inventory/resolver
+    [HttpGet("inventory/resolver")]
+    public async Task<IActionResult> ResolverInsumo([FromQuery] string termino)
+    {
+        if (string.IsNullOrWhiteSpace(termino))
+        {
+            return BadRequest(ApiResponseDto<object>.Fail("El término de búsqueda es requerido."));
+        }
+
+        var item = await _inventoryService.ResolverCoincidenciaInsumoAsync(termino);
         if (item == null)
         {
             return NotFound(ApiResponseDto<object>.Fail("Insumo no encontrado."));

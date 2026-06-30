@@ -15,6 +15,14 @@ public class AdminProductsController : ControllerBase
     private readonly IProductService _productService;
     public AdminProductsController(IProductService productService) => _productService = productService;
 
+    // GET /api/admin/products/kpis
+    [HttpGet("kpis")]
+    public async Task<IActionResult> ObtenerKpis()
+    {
+        var kpis = await _productService.ObtenerKpisAsync();
+        return Ok(ApiResponseDto<ProductKpisDto>.Ok(kpis));
+    }
+
     // GET /api/admin/products?busqueda=&estado=ACTIVO&page=1&size=20
     [HttpGet]
     public async Task<IActionResult> Listar(
