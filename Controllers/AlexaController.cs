@@ -138,20 +138,26 @@ public class AlexaController : ControllerBase
     public async Task<IActionResult> GetVentasHoy()
     {
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
-        var pedidosHoy = await _context.Orders
-            .Where(o => o.FechaEntrega == hoy && o.EstadoPedido != "CANCELADO")
-            .ToListAsync();
 
-        var totalVendido = pedidosHoy.Sum(o => o.Total);
-        var totalPedidos = pedidosHoy.Count;
-        var promedioTicket = totalPedidos > 0 ? totalVendido / totalPedidos : 0;
+        var stats = await _context.Orders
+            .Where(o => o.FechaEntrega == hoy && o.EstadoPedido != "CANCELADO")
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                TotalVendido = g.Sum(o => o.Total),
+                TotalPedidos = g.Count()
+            })
+            .FirstOrDefaultAsync();
+
+        var totalVendido = stats?.TotalVendido ?? 0;
+        var totalPedidos = stats?.TotalPedidos ?? 0;
 
         return Ok(new
         {
-            Fecha = hoy,
-            TotalVendido = totalVendido,
-            TotalPedidos = totalPedidos,
-            TicketPromedio = promedioTicket
+            Fecha          = hoy,
+            TotalVendido   = totalVendido,
+            TotalPedidos   = totalPedidos,
+            TicketPromedio = totalPedidos > 0 ? totalVendido / totalPedidos : 0
         });
     }
 
@@ -161,8 +167,7 @@ public class AlexaController : ControllerBase
     {
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
         var pendientes = await _context.Orders
-            .Include(o => o.Customer)
-            .Where(o => o.FechaEntrega == hoy && 
+            .Where(o => o.FechaEntrega == hoy &&
                         o.EstadoPedido != "ENTREGADO" && 
                         o.EstadoPedido != "CANCELADO" &&
                         o.EstadoPedido != "ENTREGADA" &&

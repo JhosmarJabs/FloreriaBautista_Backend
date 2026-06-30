@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using FloreriaBautista.Data;
 using FloreriaBautista.Models.DTOs.Common;
@@ -12,6 +13,8 @@ public class InventoryService : IInventoryService
 {
     private readonly AppDbContext              _context;
     private readonly ILogger<InventoryService> _logger;
+
+    private static readonly Regex _nonAlphaNumRegex = new(@"[^a-z0-9\s]", RegexOptions.Compiled);
 
     public InventoryService(AppDbContext context, ILogger<InventoryService> logger)
     {
@@ -250,39 +253,47 @@ public class InventoryService : IInventoryService
     public async Task RegistrarSnapshotDiarioAsync()
     {
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
-        
-        // Evitar duplicados del mismo día
+
         var existe = await _context.InventoryDailySnapshots.AnyAsync(s => s.Fecha == hoy);
         if (existe) {
             _logger.LogWarning("Ya existe un snapshot para la fecha {Fecha}. Omitiendo.", hoy);
             return;
         }
 
-        var items = await _context.InventoryItems.Where(i => i.Activo).ToListAsync();
         var inicioDia = hoy.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         var finDia    = hoy.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc);
 
-        foreach (var item in items)
-        {
-            var movimientosHoy = await _context.InventoryMovements
-                .Where(m => m.InventoryItemId == item.Id && m.FechaHora >= inicioDia && m.FechaHora <= finDia)
-                .ToListAsync();
+        // Un solo JOIN: obtiene stock actual + totales de movimientos del día por item
+        var datos = await _context.InventoryItems
+            .Where(i => i.Activo)
+            .Select(i => new
+            {
+                i.Id,
+                i.StockActual,
+                CantidadVendida  = i.InventoryMovements
+                    .Where(m => m.TipoMovimiento == "SALIDA" && m.FechaHora >= inicioDia && m.FechaHora <= finDia)
+                    .Sum(m => (int?)m.Cantidad) ?? 0,
+                CantidadRecibida = i.InventoryMovements
+                    .Where(m => m.TipoMovimiento == "ENTRADA" && m.FechaHora >= inicioDia && m.FechaHora <= finDia)
+                    .Sum(m => (int?)m.Cantidad) ?? 0
+            })
+            .ToListAsync();
 
-            var snapshot = new InventoryDailySnapshot
+        foreach (var d in datos)
+        {
+            _context.InventoryDailySnapshots.Add(new InventoryDailySnapshot
             {
                 Id               = Guid.NewGuid(),
-                InventoryItemId  = item.Id,
+                InventoryItemId  = d.Id,
                 Fecha            = hoy,
-                StockFinal       = item.StockActual,
-                CantidadVendida  = movimientosHoy.Where(m => m.TipoMovimiento == "SALIDA").Sum(m => m.Cantidad),
-                CantidadRecibida = movimientosHoy.Where(m => m.TipoMovimiento == "ENTRADA").Sum(m => m.Cantidad)
-            };
-
-            _context.InventoryDailySnapshots.Add(snapshot);
+                StockFinal       = d.StockActual,
+                CantidadVendida  = d.CantidadVendida,
+                CantidadRecibida = d.CantidadRecibida
+            });
         }
 
         await _context.SaveChangesAsync();
-        _logger.LogInformation("Snapshot diario completado para {Fecha} ({Count} items)", hoy, items.Count);
+        _logger.LogInformation("Snapshot diario completado para {Fecha} ({Count} items)", hoy, datos.Count);
     }
 
     public async Task<InventoryHistoryDto> ObtenerHistorialAsync(Guid inventoryItemId)
@@ -370,14 +381,37 @@ public class InventoryService : IInventoryService
     {
         if (string.IsNullOrWhiteSpace(termino)) return null;
 
-        var items = await _context.InventoryItems
-            .Where(i => i.Activo)
-            .ToListAsync();
-
-        if (!items.Any()) return null;
-
         var terminoNorm = NormalizarTexto(termino);
         if (string.IsNullOrEmpty(terminoNorm)) return null;
+
+        // Pre-filtro en SQL: trae solo ítems cuyo nombre contenga alguna palabra del término.
+        // Reduce drásticamente los registros que se traen a memoria antes del fuzzy matching.
+        var palabrasPrincipales = terminoNorm.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var baseQuery = _context.InventoryItems.Where(i => i.Activo);
+
+        IQueryable<InventoryItem> candidateQuery = baseQuery;
+        if (palabrasPrincipales.Length > 0)
+        {
+            var primera = palabrasPrincipales[0];
+            candidateQuery = baseQuery.Where(i => EF.Functions.ILike(i.Nombre, $"%{primera}%"));
+
+            // OR con el resto de palabras para ampliar la red
+            foreach (var palabra in palabrasPrincipales.Skip(1))
+            {
+                var p = palabra;
+                candidateQuery = candidateQuery.Union(baseQuery.Where(i => EF.Functions.ILike(i.Nombre, $"%{p}%")));
+            }
+        }
+
+        var items = await candidateQuery.ToListAsync();
+
+        // Si la búsqueda en SQL no trajo nada, intentamos con todos (fallback para Levenshtein)
+        if (items.Count == 0)
+        {
+            items = await _context.InventoryItems.Where(i => i.Activo).ToListAsync();
+        }
+
+        if (items.Count == 0) return null;
 
         var matches = new List<(InventoryItem Item, double Score)>();
 
@@ -397,24 +431,17 @@ public class InventoryService : IInventoryService
             if (nombreNorm.Contains(terminoNorm) || terminoNorm.Contains(nombreNorm))
             {
                 double ratio = (double)Math.Min(nombreNorm.Length, terminoNorm.Length) / Math.Max(nombreNorm.Length, terminoNorm.Length);
-                matches.Add((item, 0.8 + (ratio * 0.15))); 
+                matches.Add((item, 0.8 + (ratio * 0.15)));
                 continue;
             }
 
             // 3. Coincidencia por palabras clave (tokens) y des-pluralización
             var tokensTermino = ObtenerTokensNormalizados(terminoNorm);
-            var tokensNombre = ObtenerTokensNormalizados(nombreNorm);
+            var tokensNombre  = ObtenerTokensNormalizados(nombreNorm);
 
             if (tokensTermino.Count == 0 || tokensNombre.Count == 0) continue;
 
-            int palabrasCoincidentes = 0;
-            foreach (var tokenT in tokensTermino)
-            {
-                if (tokensNombre.Contains(tokenT))
-                {
-                    palabrasCoincidentes++;
-                }
-            }
+            int palabrasCoincidentes = tokensTermino.Count(t => tokensNombre.Contains(t));
 
             if (palabrasCoincidentes > 0)
             {
@@ -424,11 +451,11 @@ public class InventoryService : IInventoryService
             }
 
             // 4. Distancia de Levenshtein para variaciones menores
-            int dist = LevenshteinDistance(terminoNorm, nombreNorm);
-            int maxLen = Math.Max(terminoNorm.Length, nombreNorm.Length);
+            int dist       = LevenshteinDistance(terminoNorm, nombreNorm);
+            int maxLen     = Math.Max(terminoNorm.Length, nombreNorm.Length);
             double similarity = 1.0 - ((double)dist / maxLen);
 
-            if (similarity >= 0.45) 
+            if (similarity >= 0.45)
             {
                 matches.Add((item, similarity * 0.5));
             }
@@ -441,10 +468,7 @@ public class InventoryService : IInventoryService
             .ThenBy(m => m.Item.Nombre.Length)
             .First();
 
-        if (mejorMatch.Score < 0.35)
-        {
-            return null;
-        }
+        if (mejorMatch.Score < 0.35) return null;
 
         return MapToDto(mejorMatch.Item);
     }
@@ -468,7 +492,7 @@ public class InventoryService : IInventoryService
         }
 
         t = stringBuilder.ToString().Normalize(System.Text.NormalizationForm.FormC);
-        t = System.Text.RegularExpressions.Regex.Replace(t, @"[^a-z0-9\s]", "");
+        t = _nonAlphaNumRegex.Replace(t, "");
 
         return t;
     }

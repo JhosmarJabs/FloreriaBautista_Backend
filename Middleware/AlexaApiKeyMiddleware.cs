@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace FloreriaBautista.Middleware;
@@ -8,13 +9,15 @@ public class AlexaApiKeyMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<AlexaApiKeyMiddleware> _logger;
+    private readonly string _expectedKey;
     private const string ALEXA_HEADER_NAME = "X-Alexa-API-Key";
-    private const string ALEXA_EXPECTED_KEY = "FloreriaBautistaAlexaSecretKey2026";
 
-    public AlexaApiKeyMiddleware(RequestDelegate next, ILogger<AlexaApiKeyMiddleware> logger)
+    public AlexaApiKeyMiddleware(RequestDelegate next, ILogger<AlexaApiKeyMiddleware> logger, IConfiguration config)
     {
-        _next = next;
-        _logger = logger;
+        _next        = next;
+        _logger      = logger;
+        _expectedKey = config["Alexa:ApiKey"]
+            ?? throw new InvalidOperationException("La configuración 'Alexa:ApiKey' es requerida.");
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -25,7 +28,7 @@ public class AlexaApiKeyMiddleware
         if (path.StartsWithSegments("/api/alexa"))
         {
             if (!context.Request.Headers.TryGetValue(ALEXA_HEADER_NAME, out var extractedApiKey) ||
-                extractedApiKey != ALEXA_EXPECTED_KEY)
+                extractedApiKey != _expectedKey)
             {
                 _logger.LogWarning("Acceso denegado a {Path}: Cabecera {Header} inválida o ausente.", path, ALEXA_HEADER_NAME);
                 

@@ -18,13 +18,22 @@ public class ReportsService
     // ── Ventas ────────────────────────────────────────────────────
     public async Task<SalesReportDto> ReporteVentasAsync(DateOnly desde, DateOnly hasta)
     {
-        var pedidos = await _context.Orders
+        var baseQuery = _context.Orders
             .Where(o => o.FechaEntrega >= desde &&
                         o.FechaEntrega <= hasta &&
-                        o.EstadoPedido != "CANCELADO")
-            .ToListAsync();
+                        o.EstadoPedido != "CANCELADO");
 
-        var ventasPorDia = pedidos
+        // Totales en SQL, sin traer registros individuales a memoria
+        var totales = await baseQuery
+            .GroupBy(_ => 1)
+            .Select(g => new { TotalPedidos = g.Count(), TotalVentas = g.Sum(o => o.Total) })
+            .FirstOrDefaultAsync();
+
+        var totalPedidos = totales?.TotalPedidos ?? 0;
+        var totalVentas  = totales?.TotalVentas  ?? 0m;
+
+        // Agrupación diaria en SQL
+        var ventasPorDia = await baseQuery
             .GroupBy(o => o.FechaEntrega)
             .OrderBy(g => g.Key)
             .Select(g => new DailySaleDto
@@ -32,17 +41,16 @@ public class ReportsService
                 Fecha   = g.Key,
                 Pedidos = g.Count(),
                 Total   = g.Sum(o => o.Total)
-            }).ToList();
-
-        var totalVentas = pedidos.Sum(o => o.Total);
+            })
+            .ToListAsync();
 
         return new SalesReportDto
         {
             Desde         = desde,
             Hasta         = hasta,
-            TotalPedidos  = pedidos.Count,
+            TotalPedidos  = totalPedidos,
             TotalVentas   = totalVentas,
-            PromedioVenta = pedidos.Count > 0 ? totalVentas / pedidos.Count : 0,
+            PromedioVenta = totalPedidos > 0 ? totalVentas / totalPedidos : 0,
             VentasPorDia  = ventasPorDia
         };
     }
