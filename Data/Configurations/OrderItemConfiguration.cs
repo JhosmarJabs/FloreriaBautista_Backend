@@ -11,6 +11,9 @@ public class OrderItemConfiguration : IEntityTypeConfiguration<OrderItem>
         builder.ToTable("order_items");
         builder.HasKey(oi => oi.Id);
         builder.Property(oi => oi.PrecioUnitario).HasColumnType("decimal(10,2)");
-        builder.Property(oi => oi.Subtotal).HasColumnType("decimal(10,2)");
+        builder.Property(oi => oi.Subtotal)
+            .HasColumnType("decimal(10,2)")
+            .HasComputedColumnSql("cantidad * precio_unitario", stored: true)
+            .ValueGeneratedOnAddOrUpdate();
     }
 }

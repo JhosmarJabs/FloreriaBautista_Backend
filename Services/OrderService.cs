@@ -153,15 +153,13 @@ public class OrderService : IOrderService
             if (product.Estado != "ACTIVO")
                 throw new AppException($"El producto '{product.Nombre}' no está disponible.");
 
-            var subtotal = product.PrecioBase * item.Cantidad;
-            total += subtotal;
+            total += product.PrecioBase * item.Cantidad;
             orderItems.Add(new OrderItem
             {
                 Id             = Guid.NewGuid(),
                 ProductId      = product.Id,
                 Cantidad       = item.Cantidad,
-                PrecioUnitario = product.PrecioBase,
-                Subtotal       = subtotal
+                PrecioUnitario = product.PrecioBase
             });
         }
 
