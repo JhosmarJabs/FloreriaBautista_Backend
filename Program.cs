@@ -25,6 +25,16 @@ var builder = WebApplication.CreateBuilder(args);
 // Inyectar variables de entorno en la configuración de ASP.NET Core
 builder.Configuration.AddEnvironmentVariables();
 
+// appsettings.json usa placeholders tipo "${VAR}" (sintaxis Docker/Node) que .NET
+// NO expande automáticamente. Aquí se mapea explícitamente la variable de entorno
+// ALEXA_API_KEY (guion simple, como está configurada en Render) a la clave anidada
+// "Alexa:ApiKey" que espera AlexaApiKeyMiddleware.
+var alexaApiKeyEnv = Environment.GetEnvironmentVariable("ALEXA_API_KEY");
+if (!string.IsNullOrWhiteSpace(alexaApiKeyEnv))
+{
+    builder.Configuration["Alexa:ApiKey"] = alexaApiKeyEnv;
+}
+
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNameCaseInsensitive = true);
 
