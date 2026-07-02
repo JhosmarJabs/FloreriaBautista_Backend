@@ -55,6 +55,6 @@ public class DashboardStatsDto
     public int                OrderCount        { get; set; }
     public decimal            AverageTicket     { get; set; }
     public int                NewCustomers      { get; set; }
-    public List<DailySaleDto> WeeklySales       { get; set; } = [];
+    public List<DailySaleDto> MonthlySales      { get; set; } = [];
     public List<LowStockDto>  CriticalInventory { get; set; } = [];
 }

@@ -22,6 +22,8 @@ public class Order
     public decimal  SaldoPendiente               { get; set; } = 0;
     public DateTime? SincronizadoEn             { get; set; }
     public string?  Notas                        { get; set; }
+    public bool     Archivado                    { get; set; } = false;
+    public DateTime? ArchivadoEn                 { get; set; }
 
     public Customer              Customer   { get; set; } = null!;
     public ICollection<OrderItem> OrderItems { get; set; } = [];

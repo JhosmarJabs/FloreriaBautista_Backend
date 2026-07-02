@@ -22,6 +22,7 @@ public class AppDbContext : DbContext
     public DbSet<Category>            Categories           => Set<Category>();
     public DbSet<Catalogo>            Catalogos            => Set<Catalogo>();
     public DbSet<CustomizationOption> CustomizationOptions => Set<CustomizationOption>();
+    public DbSet<Promotion>           Promotions           => Set<Promotion>();
 
     public DbSet<ProductCategory>            ProductCategories           => Set<ProductCategory>();
     public DbSet<ProductCatalogo>            ProductCatalogos            => Set<ProductCatalogo>();
@@ -45,6 +46,7 @@ public class AppDbContext : DbContext
     public DbSet<ImportJob>         ImportJobs         => Set<ImportJob>();
     public DbSet<AuditLog>          AuditLogs          => Set<AuditLog>();
     public DbSet<SchedulerSettings> SchedulerSettings  => Set<SchedulerSettings>();
+    public DbSet<SiteSettings>      SiteSettings       => Set<SiteSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

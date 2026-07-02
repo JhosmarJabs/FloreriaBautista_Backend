@@ -15,16 +15,17 @@ public class AdminOrdersController : ControllerBase
     private readonly IOrderService _orderService;
     public AdminOrdersController(IOrderService orderService) => _orderService = orderService;
 
-    // GET /api/admin/orders?estado=PENDIENTE_VALIDACION&desde=2026-01-01&hasta=2026-12-31
+    // GET /api/admin/orders?estado=PENDIENTE_VALIDACION&desde=2026-01-01&hasta=2026-12-31&archivado=false
     [HttpGet]
     public async Task<IActionResult> Listar(
         [FromQuery] string?  estado,
         [FromQuery] DateOnly? desde,
         [FromQuery] DateOnly? hasta,
         [FromQuery] int page = 1,
-        [FromQuery] int size = 20)
+        [FromQuery] int size = 20,
+        [FromQuery] bool archivado = false)
     {
-        var resultado = await _orderService.ListarAdminAsync(estado, desde, hasta, page, size);
+        var resultado = await _orderService.ListarAdminAsync(estado, desde, hasta, page, size, archivado);
         return Ok(ApiResponseDto<PagedResultDto<OrderSummaryDto>>.Ok(resultado));
     }
 

@@ -25,3 +25,7 @@ TokenResponse*
 *.sql
 .geminirules
 .clauderules
+
+# Migraciones de EF Core — el esquema real se gestiona con scripts SQL manuales,
+# no queremos exponer la estructura de tablas/columnas via el historial de migraciones
+Migrations/

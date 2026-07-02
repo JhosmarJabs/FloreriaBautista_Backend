@@ -1,4 +1,6 @@
+using FloreriaBautista.Models.DTOs.Cms;
 using FloreriaBautista.Models.DTOs.Common;
+using FloreriaBautista.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,10 +12,22 @@ namespace FloreriaBautista.Controllers.Admin;
 [Authorize(Roles = "ADMIN")]
 public class AdminCmsController : ControllerBase
 {
-    [HttpPost]
-    public IActionResult ActualizarCms([FromBody] object request)
+    private readonly CmsService _cmsService;
+    public AdminCmsController(CmsService cmsService) => _cmsService = cmsService;
+
+    // GET /api/admin/cms
+    [HttpGet]
+    public async Task<IActionResult> Obtener()
     {
-        // TODO: Mapear este endpoint cuando se cree la tabla de configuración real del CMS
-        return Ok(ApiResponseDto<object>.Ok(request, "Configuración del CMS actualizada."));
+        var settings = await _cmsService.ObtenerAsync();
+        return Ok(ApiResponseDto<SiteSettingsDto>.Ok(settings));
+    }
+
+    // POST /api/admin/cms
+    [HttpPost]
+    public async Task<IActionResult> Actualizar([FromBody] SiteSettingsDto request)
+    {
+        var settings = await _cmsService.ActualizarAsync(request);
+        return Ok(ApiResponseDto<SiteSettingsDto>.Ok(settings, "Configuración del CMS actualizada."));
     }
 }

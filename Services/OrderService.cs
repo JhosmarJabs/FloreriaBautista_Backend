@@ -117,11 +117,21 @@ public class OrderService : IOrderService
 
     // ── Admin: listar ─────────────────────────────────────────────
     public async Task<PagedResultDto<OrderSummaryDto>> ListarAdminAsync(
-        string? estado, DateOnly? desde, DateOnly? hasta, int page, int size)
+        string? estado, DateOnly? desde, DateOnly? hasta, int page, int size, bool archivado = false)
     {
         var query = _context.Orders
             .Include(o => o.Customer)
+            .Where(o => o.Archivado == archivado)
             .AsQueryable();
+
+        // La vista activa (no archivada) solo muestra pedidos de hoy en adelante.
+        // Los atrasados los mueve OrderArchiverService al archivo; este filtro evita
+        // que se sigan viendo mientras esa revisión (cada hora) todavía no corre.
+        if (!archivado)
+        {
+            var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+            query = query.Where(o => o.FechaEntrega >= hoy);
+        }
 
         if (!string.IsNullOrWhiteSpace(estado))
             query = query.Where(o => o.EstadoPedido == estado.ToUpper());
@@ -216,7 +226,8 @@ public class OrderService : IOrderService
                 FechaEntrega  = o.FechaEntrega,
                 Total         = o.Total,
                 NombreCliente = o.Customer.Nombre,
-                FechaCreacion = o.FechaCreacion
+                FechaCreacion = o.FechaCreacion,
+                Archivado     = o.Archivado
             }).ToListAsync();
 
         return new PagedResultDto<OrderSummaryDto>
@@ -243,6 +254,7 @@ public class OrderService : IOrderService
         Notas          = o.Notas,
         NombreCliente  = o.Customer?.Nombre ?? "",
         FechaCreacion  = o.FechaCreacion,
+        Archivado      = o.Archivado,
         Direccion = new DireccionDto
         {
             Calle       = o.DireccionEntregaCalle,

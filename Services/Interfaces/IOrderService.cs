@@ -10,6 +10,6 @@ public interface IOrderService
     Task<PagedResultDto<OrderSummaryDto>> ListarMisPedidosAsync(Guid userId, int page, int size);
     Task<OrderResponseDto>               ObtenerMiPedidoAsync(Guid userId, Guid orderId);
     Task<OrderResponseDto>               CambiarEstadoAsync(Guid orderId, UpdateOrderStatusRequestDto request, List<string> rolesUsuario);
-    Task<PagedResultDto<OrderSummaryDto>> ListarAdminAsync(string? estado, DateOnly? desde, DateOnly? hasta, int page, int size);
+    Task<PagedResultDto<OrderSummaryDto>> ListarAdminAsync(string? estado, DateOnly? desde, DateOnly? hasta, int page, int size, bool archivado = false);
     Task<OrderResponseDto>               ObtenerAdminAsync(Guid orderId);
 }

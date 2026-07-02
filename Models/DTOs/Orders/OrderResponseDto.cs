@@ -14,6 +14,7 @@ public class OrderResponseDto
     public string?  Notas          { get; set; }
     public string   NombreCliente  { get; set; } = string.Empty;
     public DateTime FechaCreacion  { get; set; }
+    public bool     Archivado      { get; set; }
 
     public DireccionDto             Direccion { get; set; } = null!;
     public List<OrderItemResponseDto> Items   { get; set; } = [];
@@ -37,6 +38,7 @@ public class OrderSummaryDto
     public decimal  Total          { get; set; }
     public string   NombreCliente  { get; set; } = string.Empty;
     public DateTime FechaCreacion  { get; set; }
+    public bool     Archivado      { get; set; }
 }
 
 public class UpdateOrderStatusRequestDto

@@ -132,29 +132,37 @@ public class ReportsService
     }
 
     // ── Dashboard ─────────────────────────────────────────────────
-    public async Task<DashboardStatsDto> ObtenerDashboardStatsAsync()
+    public async Task<DashboardStatsDto> ObtenerDashboardStatsAsync(string periodo = "mes")
     {
-        var hoy   = DateOnly.FromDateTime(DateTime.UtcNow);
-        var semanaPasada = hoy.AddDays(-7);
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
 
-        // 1. Pedidos (últimos 30 días para KPIs generales)
-        var inicioMes = hoy.AddDays(-30);
-        var pedidosMes = await _context.Orders
-            .Where(o => o.FechaEntrega >= inicioMes && o.EstadoPedido != "CANCELADO")
+        // Rango según el periodo que envía Alexa (dia / semana / mes)
+        var dias = periodo switch
+        {
+            "dia"    => 1,
+            "semana" => 7,
+            _        => 30   // "mes" por defecto
+        };
+        var desde = hoy.AddDays(-(dias - 1)); // incluye hoy
+
+        // 1. Pedidos del periodo
+        var pedidos = await _context.Orders
+            .Where(o => o.FechaEntrega >= desde && o.FechaEntrega <= hoy && o.EstadoPedido != "CANCELADO")
             .ToListAsync();
 
-        var totalSales  = pedidosMes.Sum(o => o.Total);
-        var orderCount  = pedidosMes.Count;
+        var totalSales  = pedidos.Sum(o => o.Total);
+        var orderCount  = pedidos.Count;
         var avgTicket   = orderCount > 0 ? totalSales / orderCount : 0;
 
-        // 2. Nuevos clientes (últimos 7 días)
+        // 2. Nuevos clientes en el mismo periodo
+        var desdeDateTime = desde.ToDateTime(TimeOnly.MinValue);
         var newCustomers = await _context.Users
-            .Where(u => u.CreadoEn >= DateTime.UtcNow.AddDays(-7))
+            .Where(u => u.CreadoEn >= desdeDateTime)
             .CountAsync();
 
-        // 3. Ventas semanales (para la gráfica)
-        var deHoyParaAtras = await _context.Orders
-            .Where(o => o.FechaEntrega >= semanaPasada && o.EstadoPedido != "CANCELADO")
+        // 3. Ventas por día del periodo (para la gráfica)
+        var ventasPorDia = await _context.Orders
+            .Where(o => o.FechaEntrega >= desde && o.FechaEntrega <= hoy && o.EstadoPedido != "CANCELADO")
             .GroupBy(o => o.FechaEntrega)
             .Select(g => new DailySaleDto
             {
@@ -185,7 +193,7 @@ public class ReportsService
             OrderCount        = orderCount,
             AverageTicket     = avgTicket,
             NewCustomers      = newCustomers,
-            WeeklySales       = deHoyParaAtras,
+            MonthlySales      = ventasPorDia,
             CriticalInventory = criticalInventory
         };
     }

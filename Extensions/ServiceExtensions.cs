@@ -76,6 +76,7 @@ public static class ServiceExtensions
         // Registrar como singleton para poder inyectarlo en el controller
         services.AddSingleton<BackupSchedulerService>();
         services.AddHostedService(sp => sp.GetRequiredService<BackupSchedulerService>());
+        services.AddHostedService<OrderArchiverService>();
 
         // TODO: Registrar aquí los demás módulos
         services.AddScoped<IAuditService, AuditService>();
@@ -86,6 +87,7 @@ public static class ServiceExtensions
         services.AddScoped<IOrderService, OrderService>();
         services.AddScoped<IInventoryService, InventoryService>();
         services.AddScoped<ReportsService>();
+        services.AddScoped<CmsService>();
 
         return services;
     }

@@ -140,7 +140,7 @@ public class AlexaController : ControllerBase
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
 
         var stats = await _context.Orders
-            .Where(o => o.FechaEntrega == hoy && o.EstadoPedido != "CANCELADO")
+            .Where(o => o.FechaEntrega == hoy && o.EstadoPedido != "CANCELADO" && !o.Archivado)
             .GroupBy(_ => 1)
             .Select(g => new
             {
@@ -168,7 +168,8 @@ public class AlexaController : ControllerBase
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
         var pendientes = await _context.Orders
             .Where(o => o.FechaEntrega == hoy &&
-                        o.EstadoPedido != "ENTREGADO" && 
+                        !o.Archivado &&
+                        o.EstadoPedido != "ENTREGADO" &&
                         o.EstadoPedido != "CANCELADO" &&
                         o.EstadoPedido != "ENTREGADA" &&
                         o.EstadoPedido != "CANCELADA")
@@ -206,11 +207,108 @@ public class AlexaController : ControllerBase
         return Ok(items);
     }
 
-    // GET /api/alexa/dashboard
+    // GET /api/alexa/dashboard?periodo=dia|semana|mes
     [HttpGet("dashboard")]
-    public async Task<IActionResult> GetDashboardStats()
+    public async Task<IActionResult> GetDashboardStats([FromQuery] string periodo = "mes")
     {
-        var stats = await _reportsService.ObtenerDashboardStatsAsync();
+        var stats = await _reportsService.ObtenerDashboardStatsAsync(periodo);
         return Ok(stats);
+    }
+
+    // POST /api/alexa/reabastecer
+    [HttpPost("reabastecer")]
+    public async Task<IActionResult> EnviarSolicitudReabastecimiento()
+    {
+        try
+        {
+            // Obtener productos con stock bajo
+            var productosCortos = await _context.InventoryItems
+                .Where(i => i.Activo && i.StockActual <= i.StockMinimo)
+                .OrderBy(i => i.Nombre)
+                .Select(i => new
+                {
+                    i.Nombre,
+                    i.StockActual,
+                    i.StockMinimo
+                })
+                .ToListAsync();
+
+            if (!productosCortos.Any())
+            {
+                return Ok(ApiResponseDto<object>.Fail("No hay productos con stock bajo para reabastecer."));
+            }
+
+            // Generar mensaje formateado
+            var mensaje = GenerarMensajeReabastecimiento(productosCortos);
+
+            // Determinar ambiente (TEST o PROD)
+            var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production" ? "prod" : "test";
+            var n8nUrl = environment == "test"
+                ? "https://edith-n8n.btxyoq.easypanel.host/webhook-test/reabastecer"
+                : "https://edith-n8n.btxyoq.easypanel.host/webhook/reabastecer";
+
+            // Preparar payload para n8n
+            var payload = new
+            {
+                mensaje = mensaje,
+                environment = environment
+            };
+
+            // Enviar a n8n
+            var response = await EnviarAn8nAsync(n8nUrl, payload);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return StatusCode(500, ApiResponseDto<object>.Fail("Error enviando solicitud a n8n."));
+            }
+
+            return Ok(ApiResponseDto<object>.Ok(new
+            {
+                mensaje = "Solicitud de reabastecimiento enviada correctamente",
+                productosCortos = productosCortos.Count(),
+                ambiente = environment
+            }));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ApiResponseDto<object>.Fail($"Error: {ex.Message}"));
+        }
+    }
+
+    // Método privado para generar el mensaje formateado
+    private string GenerarMensajeReabastecimiento(IEnumerable<dynamic> productosCortos)
+    {
+        var mensaje = "📦 REABASTECER - Insumos sin stock:\n\n";
+
+        foreach (var producto in productosCortos)
+        {
+            mensaje += $"- {producto.Nombre}: {producto.StockActual} unidades (Mínimo: {producto.StockMinimo})\n";
+        }
+
+        mensaje += "\n✅ ¿Confirmas que solicite esto a tu proveedor?";
+
+        return mensaje;
+    }
+
+    // Método privado para enviar a n8n
+    private async Task<HttpResponseMessage> EnviarAn8nAsync(string url, object payload)
+    {
+        using (var client = new HttpClient())
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+
+            var json = System.Text.Json.JsonSerializer.Serialize(payload);
+            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+            try
+            {
+                return await client.PostAsync(url, content);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[n8n Error] {ex.Message}");
+                throw;
+            }
+        }
     }
 }

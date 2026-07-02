@@ -26,6 +26,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.Total).HasColumnType("numeric(10,2)").HasDefaultValue(0);
         builder.Property(o => o.SaldoPendiente).HasColumnType("numeric(10,2)").HasDefaultValue(0);
         builder.Property(o => o.FechaCreacion).HasDefaultValueSql("NOW()");
+        builder.Property(o => o.Archivado).HasDefaultValue(false);
 
         builder.HasMany(o => o.OrderItems)
                .WithOne(oi => oi.Order)
