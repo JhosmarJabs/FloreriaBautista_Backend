@@ -261,25 +261,30 @@ public class AlexaController : ControllerBase
             var mensaje = GenerarMensajeReabastecimiento(productosCortos);
             Console.WriteLine($"✅ Mensaje generado ({mensaje.Length} caracteres)");
 
-            Console.WriteLine("\n📍 [PASO 3] Enviando a Evolution API...");
-            Console.WriteLine($"   URL: http://evolution-api:8080/message/sendText/Edith/");
-            Console.WriteLine($"   Número destino: 5217712194196");
+            var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production" ? "prod" : "test";
+            var n8nUrl = Environment.GetEnvironmentVariable("N8N_REABASTECER_WEBHOOK_URL")
+                ?? (environment == "prod"
+                    ? "https://edith-n8n.btxyoq.easypanel.host/webhook/reabastecer"
+                    : "https://edith-n8n.btxyoq.easypanel.host/webhook-test/reabastecer");
 
-            // Enviar directamente a Evolution API
-            var response = await EnviarPorWhatsAppAsync(mensaje);
+            Console.WriteLine("\n📍 [PASO 3] Enviando a n8n...");
+            Console.WriteLine($"   URL: {n8nUrl}");
+
+            // Enviar al webhook de n8n (n8n se encarga de reenviarlo a Evolution API)
+            var response = await EnviarAn8nAsync(n8nUrl, mensaje, environment);
 
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"\n❌ ERROR EN EVOLUTION API");
+                Console.WriteLine($"\n❌ ERROR EN N8N");
                 Console.WriteLine($"   Código: {response.StatusCode}");
                 Console.WriteLine($"   Respuesta: {errorContent}");
                 Console.WriteLine(new string('=', 80) + "\n");
-                return StatusCode(500, ApiResponseDto<object>.Fail($"Error enviando WhatsApp: {response.StatusCode}"));
+                return StatusCode(500, ApiResponseDto<object>.Fail($"Error enviando a n8n: {response.StatusCode}"));
             }
 
             var responseContent = await response.Content.ReadAsStringAsync();
-            Console.WriteLine($"\n✅ ¡ÉXITO! Mensaje enviado correctamente");
+            Console.WriteLine($"\n✅ ¡ÉXITO! Solicitud enviada a n8n correctamente");
             Console.WriteLine($"   Status Code: {response.StatusCode}");
             Console.WriteLine($"   Respuesta: {responseContent}");
 
@@ -289,7 +294,7 @@ public class AlexaController : ControllerBase
             {
                 mensaje = "Solicitud de reabastecimiento enviada por WhatsApp",
                 productosCortos = productosCortos.Count(),
-                numero = "5217712194196",
+                ambiente = environment,
                 timestamp = DateTime.UtcNow
             };
 
@@ -303,11 +308,9 @@ public class AlexaController : ControllerBase
             Console.WriteLine($"\n❌ ERROR DE CONEXIÓN");
             Console.WriteLine($"   Tipo: {hre.GetType().Name}");
             Console.WriteLine($"   Mensaje: {hre.Message}");
-            Console.WriteLine($"   Problema: No se puede conectar a Evolution API");
-            Console.WriteLine($"   Acción: Verifica que Evolution API esté corriendo");
-            Console.WriteLine($"   URL configurada: {Environment.GetEnvironmentVariable("EVOLUTION_API_URL") ?? "http://72.60.70.123:8080/message/sendText/Edith/"}");
+            Console.WriteLine($"   Problema: No se puede conectar al webhook de n8n");
             Console.WriteLine(new string('=', 80) + "\n");
-            return StatusCode(503, ApiResponseDto<object>.Fail($"No se puede conectar a Evolution API: {hre.Message}"));
+            return StatusCode(503, ApiResponseDto<object>.Fail($"No se puede conectar a n8n: {hre.Message}"));
         }
         catch (Exception ex)
         {
@@ -335,44 +338,30 @@ public class AlexaController : ControllerBase
         return mensaje;
     }
 
-    // Método privado para enviar WhatsApp vía Evolution API
-    private async Task<HttpResponseMessage> EnviarPorWhatsAppAsync(string texto)
+    // Método privado para enviar la solicitud al webhook de n8n
+    // (n8n es quien se encarga de reenviar el mensaje a Evolution API/WhatsApp)
+    private async Task<HttpResponseMessage> EnviarAn8nAsync(string url, string mensaje, string environment)
     {
         try
         {
             using (var client = new HttpClient())
             {
-                client.Timeout = TimeSpan.FromSeconds(10);
+                client.Timeout = TimeSpan.FromSeconds(15);
 
-                // Configuración de Evolution API (igual a n8n)
-                // Usa variable de entorno si está disponible, sino usa la URL pública
-                var evolutionUrl = Environment.GetEnvironmentVariable("EVOLUTION_API_URL")
-                    ?? "http://72.60.70.123:8080/message/sendText/Edith/";
-                var apiKey = Environment.GetEnvironmentVariable("EVOLUTION_API_KEY")
-                    ?? "CB5D8131DF05-4633-B870-49527C73D9A2";
-                var destinationNumber = Environment.GetEnvironmentVariable("EVOLUTION_DESTINATION_NUMBER")
-                    ?? "5217712194196";
-
-                // Preparar payload (igual a n8n)
                 var payload = new
                 {
-                    number = destinationNumber,
-                    text = texto
+                    mensaje = mensaje,
+                    environment = environment
                 };
 
                 var json = System.Text.Json.JsonSerializer.Serialize(payload);
                 var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-                // Agregar headers (igual a n8n)
-                content.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse("application/json");
-                client.DefaultRequestHeaders.Add("apikey", apiKey);
-
-                Console.WriteLine($"\n   📤 Enviando POST a Evolution API...");
-                Console.WriteLine($"   URL: {evolutionUrl}");
+                Console.WriteLine($"\n   📤 Enviando POST a n8n...");
+                Console.WriteLine($"   URL: {url}");
                 Console.WriteLine($"   Payload: {json}");
-                Console.WriteLine($"   API Key: {apiKey.Substring(0, 8)}...");
 
-                var response = await client.PostAsync(evolutionUrl, content);
+                var response = await client.PostAsync(url, content);
                 var responseContent = await response.Content.ReadAsStringAsync();
 
                 if (response.IsSuccessStatusCode)
@@ -385,14 +374,13 @@ public class AlexaController : ControllerBase
                     Console.WriteLine($"\n   ❌ Respuesta con error (HTTP {response.StatusCode})");
                     Console.WriteLine($"   Content: {responseContent}");
                 }
-                Console.WriteLine($"[Evolution API] Body: {responseContent}");
 
                 return response;
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Evolution API Exception] {ex.Message}");
+            Console.WriteLine($"[n8n Exception] {ex.Message}");
             throw;
         }
     }
