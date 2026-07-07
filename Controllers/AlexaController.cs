@@ -298,6 +298,17 @@ public class AlexaController : ControllerBase
 
             return Ok(ApiResponseDto<object>.Ok(resultado));
         }
+        catch (HttpRequestException hre)
+        {
+            Console.WriteLine($"\n❌ ERROR DE CONEXIÓN");
+            Console.WriteLine($"   Tipo: {hre.GetType().Name}");
+            Console.WriteLine($"   Mensaje: {hre.Message}");
+            Console.WriteLine($"   Problema: No se puede conectar a Evolution API");
+            Console.WriteLine($"   Acción: Verifica que Evolution API esté corriendo");
+            Console.WriteLine($"   URL configurada: {Environment.GetEnvironmentVariable("EVOLUTION_API_URL") ?? "http://72.60.70.123:8080/message/sendText/Edith/"}");
+            Console.WriteLine(new string('=', 80) + "\n");
+            return StatusCode(503, ApiResponseDto<object>.Fail($"No se puede conectar a Evolution API: {hre.Message}"));
+        }
         catch (Exception ex)
         {
             Console.WriteLine($"\n❌ EXCEPCIÓN EN EL PROCESO");
@@ -334,9 +345,13 @@ public class AlexaController : ControllerBase
                 client.Timeout = TimeSpan.FromSeconds(10);
 
                 // Configuración de Evolution API (igual a n8n)
-                var evolutionUrl = "http://evolution-api:8080/message/sendText/Edith/";
-                var apiKey = "CB5D8131DF05-4633-B870-49527C73D9A2";
-                var destinationNumber = "5217712194196";
+                // Usa variable de entorno si está disponible, sino usa la URL pública
+                var evolutionUrl = Environment.GetEnvironmentVariable("EVOLUTION_API_URL")
+                    ?? "http://72.60.70.123:8080/message/sendText/Edith/";
+                var apiKey = Environment.GetEnvironmentVariable("EVOLUTION_API_KEY")
+                    ?? "CB5D8131DF05-4633-B870-49527C73D9A2";
+                var destinationNumber = Environment.GetEnvironmentVariable("EVOLUTION_DESTINATION_NUMBER")
+                    ?? "5217712194196";
 
                 // Preparar payload (igual a n8n)
                 var payload = new
