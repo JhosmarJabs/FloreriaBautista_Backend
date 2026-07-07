@@ -217,7 +217,7 @@ public class AlexaController : ControllerBase
 
     // POST /api/alexa/reabastecer
     [HttpPost("reabastecer")]
-    public async Task<IActionResult> EnviarSolicitudReabastecimiento()
+    public async Task<IActionResult> EnviarSolicitudReabastecimiento([FromBody] ReabastecerRequest? req = null)
     {
         try
         {
@@ -241,8 +241,11 @@ public class AlexaController : ControllerBase
             // Generar mensaje formateado
             var mensaje = GenerarMensajeReabastecimiento(productosCortos);
 
-            // Determinar ambiente (TEST o PROD)
-            var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production" ? "prod" : "test";
+            // Determinar ambiente (TEST o PROD): prioriza lo que pide Alexa en el
+            // body; si no viene, usa el ambiente del servidor como respaldo.
+            var environment = (req?.Environment == "prod" || req?.Environment == "test")
+                ? req.Environment
+                : (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production" ? "prod" : "test");
             var n8nUrl = environment == "test"
                 ? "https://edith-n8n.btxyoq.easypanel.host/webhook-test/reabastecer"
                 : "https://edith-n8n.btxyoq.easypanel.host/webhook/reabastecer";
@@ -311,4 +314,13 @@ public class AlexaController : ControllerBase
             }
         }
     }
+}
+
+/// <summary>
+/// Cuerpo del POST /api/alexa/reabastecer. La Skill de Alexa indica el ambiente
+/// ("prod" o "test") para que el backend elija la URL de n8n correspondiente.
+/// </summary>
+public class ReabastecerRequest
+{
+    public string? Environment { get; set; }
 }

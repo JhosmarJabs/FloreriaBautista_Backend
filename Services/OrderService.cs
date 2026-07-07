@@ -44,6 +44,12 @@ public class OrderService : IOrderService
     // ── Crear pedido físico ───────────────────────────────────────
     public async Task<OrderResponseDto> CrearPedidoFisicoAsync(CreatePhysicalOrderRequestDto request)
     {
+        var esInstantaneo = request.TipoPedido.Trim().ToUpper() == "INSTANTANEO";
+
+        // La dirección solo es obligatoria si el pedido sí implica una entrega a domicilio.
+        if (!esInstantaneo && request.Direccion == null)
+            throw new AppException("La dirección de entrega es obligatoria para pedidos anticipados.");
+
         // Buscar o crear cliente físico
         var customer = await _context.Customers
             .FirstOrDefaultAsync(c => c.TipoCliente == "FISICO" &&
@@ -64,7 +70,8 @@ public class OrderService : IOrderService
         }
 
         return await CrearPedidoAsync(customer, "FISICO", request.TipoPedido, request.FechaEntrega,
-            request.HoraEntrega, request.Direccion, request.Items, request.Notas);
+            request.HoraEntrega, request.Direccion, request.Items, request.Notas,
+            entregaInmediata: esInstantaneo);
     }
 
     // ── Mis pedidos ───────────────────────────────────────────────
@@ -151,7 +158,8 @@ public class OrderService : IOrderService
     private async Task<OrderResponseDto> CrearPedidoAsync(
         Customer customer, string canal, string tipo,
         DateOnly fechaEntrega, TimeOnly? horaEntrega,
-        DireccionDto direccion, List<OrderItemRequestDto> items, string? notas)
+        DireccionDto? direccion, List<OrderItemRequestDto> items, string? notas,
+        bool entregaInmediata = false)
     {
         decimal total = 0;
         var orderItems = new List<OrderItem>();
@@ -179,19 +187,21 @@ public class OrderService : IOrderService
             CustomerId                  = customer.Id,
             TipoPedido                  = tipo.ToUpper(),
             Canal                       = canal,
-            EstadoPedido                = "PENDIENTE_VALIDACION",
+            // Una venta instantánea de mostrador se paga y se entrega ahí mismo:
+            // no pasa por preparación ni ruta de entrega.
+            EstadoPedido                = entregaInmediata ? "ENTREGADO" : "PENDIENTE_VALIDACION",
             FechaCreacion               = DateTime.UtcNow,
             FechaEntrega                = fechaEntrega,
             HoraEntrega                 = horaEntrega,
             Total                       = total,
-            SaldoPendiente              = total,
+            SaldoPendiente              = entregaInmediata ? 0 : total,
             Notas                       = notas,
-            DireccionEntregaCalle       = direccion.Calle,
-            DireccionEntregaColonia     = direccion.Colonia,
-            DireccionEntregaMunicipio   = direccion.Municipio,
-            DireccionEntregaEstado      = direccion.Estado,
-            DireccionEntregaCp          = direccion.Cp,
-            DireccionEntregaReferencias = direccion.Referencias
+            DireccionEntregaCalle       = direccion?.Calle ?? "",
+            DireccionEntregaColonia     = direccion?.Colonia ?? "",
+            DireccionEntregaMunicipio   = direccion?.Municipio ?? "",
+            DireccionEntregaEstado      = direccion?.Estado ?? "",
+            DireccionEntregaCp          = direccion?.Cp,
+            DireccionEntregaReferencias = direccion?.Referencias
         };
 
         foreach (var oi in orderItems) { oi.OrderId = order.Id; order.OrderItems.Add(oi); }

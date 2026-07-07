@@ -22,7 +22,9 @@ public class CreatePhysicalOrderRequestDto
     public TimeOnly?           HoraEntrega  { get; set; }
     public string              TipoPedido   { get; set; } = "INSTANTANEO";
     public string?             Notas        { get; set; }
-    [Required] public DireccionDto Direccion { get; set; } = null!;
+    // Solo es obligatoria para pedidos ANTICIPADO (con entrega a domicilio).
+    // Una venta INSTANTANEO de mostrador no tiene a dónde entregar.
+    public DireccionDto?       Direccion    { get; set; }
     [Required] [MinLength(1)]
     public List<OrderItemRequestDto> Items  { get; set; } = [];
 }

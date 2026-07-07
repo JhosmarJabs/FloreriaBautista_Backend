@@ -110,8 +110,8 @@ public class AdminPromotionsController : ControllerBase
         return Ok(ApiResponseDto<PromotionDto>.Ok(MapToDto(item), "Promoción actualizada correctamente."));
     }
 
-    // DELETE /api/admin/promotions/{id}
-    [HttpDelete("{id:guid}")]
+    // POST /api/admin/promotions/{id}/eliminar
+    [HttpPost("{id:guid}/eliminar")]
     public async Task<IActionResult> Eliminar(Guid id)
     {
         var item = await _context.Promotions.FindAsync(id);
