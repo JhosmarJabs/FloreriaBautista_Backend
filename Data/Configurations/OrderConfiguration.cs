@@ -23,8 +23,11 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.DireccionEntregaCp).HasMaxLength(10);
         builder.Property(o => o.DireccionEntregaReferencias).HasMaxLength(255);
         builder.Property(o => o.CostoEnvio).HasColumnType("numeric(10,2)");
-        builder.Property(o => o.Total).HasColumnType("numeric(10,2)").HasDefaultValue(0);
-        builder.Property(o => o.SaldoPendiente).HasColumnType("numeric(10,2)").HasDefaultValue(0);
+        // Sin .HasDefaultValue(0): la columna real no tiene DEFAULT en Postgres (solo NOT NULL + CHECK >= 0).
+        // Si se declarara aquí, EF Core omitiría la columna del INSERT cuando el valor en C# es 0
+        // (su default de CLR), y Postgres insertaría NULL, violando el NOT NULL.
+        builder.Property(o => o.Total).HasColumnType("numeric(10,2)");
+        builder.Property(o => o.SaldoPendiente).HasColumnType("numeric(10,2)");
         builder.Property(o => o.FechaCreacion).HasDefaultValueSql("NOW()");
         builder.Property(o => o.Archivado).HasDefaultValue(false);
 
