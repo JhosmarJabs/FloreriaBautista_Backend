@@ -263,9 +263,7 @@ public class AlexaController : ControllerBase
 
             var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production" ? "prod" : "test";
             var n8nUrl = Environment.GetEnvironmentVariable("N8N_REABASTECER_WEBHOOK_URL")
-                ?? (environment == "prod"
-                    ? "https://edith-n8n.btxyoq.easypanel.host/webhook/reabastecer"
-                    : "https://edith-n8n.btxyoq.easypanel.host/webhook-test/reabastecer");
+                ?? "https://edith-n8n.btxyoq.easypanel.host/webhook/reabastecer";
 
             Console.WriteLine("\n📍 [PASO 3] Enviando a n8n...");
             Console.WriteLine($"   URL: {n8nUrl}");

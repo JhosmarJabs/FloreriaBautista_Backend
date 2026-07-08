@@ -155,7 +155,8 @@ public class ReportsService
         var avgTicket   = orderCount > 0 ? totalSales / orderCount : 0;
 
         // 2. Nuevos clientes en el mismo periodo
-        var desdeDateTime = desde.ToDateTime(TimeOnly.MinValue);
+        // Npgsql exige Kind=Utc para columnas "timestamp with time zone"
+        var desdeDateTime = DateTime.SpecifyKind(desde.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
         var newCustomers = await _context.Users
             .Where(u => u.CreadoEn >= desdeDateTime)
             .CountAsync();
