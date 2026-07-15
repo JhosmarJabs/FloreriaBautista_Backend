@@ -80,6 +80,70 @@ public class ProductService : IProductService
         };
     }
 
+    // ── Listar para empleado ──────────────────────────────────────
+    // Igual que el listado público, pero SIN excluir "SOLO_SUCURSAL":
+    // el empleado necesita ver también los productos de solo-tienda al
+    // registrar un pedido físico. No expone datos internos (recetas, etc.).
+    public async Task<PagedResultDto<ProductSummaryDto>> ListarParaEmpleadoAsync(
+        string? busqueda,
+        string? categoria,
+        string? catalogo,
+        int page,
+        int size
+    )
+    {
+        var query = _context
+            .Products.Include(p => p.ProductCategories)
+            .ThenInclude(pc => pc.Category)
+            .Include(p => p.ProductCatalogos)
+            .ThenInclude(pc => pc.Catalogo)
+            .Where(p => p.Activo && p.Estado == "ACTIVO")
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(busqueda))
+            query = query.Where(p =>
+                p.Nombre.Contains(busqueda) || p.Descripcion.Contains(busqueda)
+            );
+
+        if (!string.IsNullOrWhiteSpace(categoria))
+            query = query.Where(p =>
+                p.ProductCategories.Any(pc => pc.Category.Nombre.ToLower() == categoria.ToLower())
+            );
+
+        if (!string.IsNullOrWhiteSpace(catalogo))
+            query = query.Where(p =>
+                p.ProductCatalogos.Any(pc =>
+                    pc.Catalogo.Nombre.ToLower() == catalogo.ToLower()
+                )
+            );
+
+        var total = await query.CountAsync();
+        var items = await query
+            .OrderBy(p => p.Nombre)
+            .Skip((page - 1) * size)
+            .Take(size)
+            .Select(p => new ProductSummaryDto
+            {
+                Id = p.Id,
+                Nombre = p.Nombre,
+                PrecioBase = p.PrecioBase,
+                Tipo = p.Tipo,
+                Estado = p.Estado,
+                ImagenUrl = p.ImagenUrl,
+                Stock = null,
+            })
+            .ToListAsync();
+
+        return new PagedResultDto<ProductSummaryDto>
+        {
+            Items = items,
+            Total = total,
+            Pagina = page,
+            TamanoPagina = size,
+            TotalPaginas = (int)Math.Ceiling(total / (double)size),
+        };
+    }
+
     // ── Detalle público ───────────────────────────────────────────
     public async Task<ProductResponseDto> ObtenerPublicoAsync(Guid id)
     {

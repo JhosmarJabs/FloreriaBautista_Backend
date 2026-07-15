@@ -23,6 +23,8 @@ public class AppDbContext : DbContext
     public DbSet<Catalogo>            Catalogos            => Set<Catalogo>();
     public DbSet<CustomizationOption> CustomizationOptions => Set<CustomizationOption>();
     public DbSet<Promotion>           Promotions           => Set<Promotion>();
+    public DbSet<QuickSaleTemplate>     QuickSaleTemplates     => Set<QuickSaleTemplate>();
+    public DbSet<QuickSaleTemplateItem> QuickSaleTemplateItems => Set<QuickSaleTemplateItem>();
 
     public DbSet<ProductCategory>            ProductCategories           => Set<ProductCategory>();
     public DbSet<ProductCatalogo>            ProductCatalogos            => Set<ProductCatalogo>();

@@ -377,6 +377,24 @@ public class InventoryService : IInventoryService
         };
     }
 
+    // ── Consumo reciente (derivado, no hay tabla de ventas por insumo) ─────
+    // Cruza OrderItems (pedidos no cancelados, entregados en el rango) con ProductRecipe
+    // para calcular cuántas unidades de cada insumo se han consumido. Los insumos que no
+    // aparecen en el resultado nunca se vendieron en ese periodo (consumo implícito = 0).
+    public async Task<Dictionary<Guid, int>> ObtenerConsumoRecienteAsync(int dias = 30)
+    {
+        var desde = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-dias);
+
+        return await _context.OrderItems
+            .Include(oi => oi.Order)
+            .Where(oi => oi.Order.EstadoPedido != "CANCELADO" && oi.Order.FechaEntrega >= desde)
+            .Join(_context.ProductRecipes, oi => oi.ProductId, r => r.ProductId,
+                  (oi, r) => new { r.InventoryItemId, Unidades = oi.Cantidad * r.CantidadRequerida })
+            .GroupBy(x => x.InventoryItemId)
+            .Select(g => new { g.Key, Total = g.Sum(x => x.Unidades) })
+            .ToDictionaryAsync(x => x.Key, x => x.Total);
+    }
+
     public async Task<InventoryItemDto?> ResolverCoincidenciaInsumoAsync(string termino)
     {
         if (string.IsNullOrWhiteSpace(termino)) return null;

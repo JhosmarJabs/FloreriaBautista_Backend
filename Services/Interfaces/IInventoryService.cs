@@ -18,4 +18,7 @@ public interface IInventoryService
     Task                      RegistrarSnapshotDiarioAsync();
     Task<InventoryKpisDto>    ObtenerKpisAsync();
     Task<InventoryItemDto?>   ResolverCoincidenciaInsumoAsync(string termino);
+
+    // Consumo reciente (derivado de OrderItems x ProductRecipe) para priorizar insumos por venta real
+    Task<Dictionary<Guid,int>> ObtenerConsumoRecienteAsync(int dias = 30);
 }

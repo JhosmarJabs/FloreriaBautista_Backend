@@ -71,7 +71,9 @@ public class OrderService : IOrderService
 
         return await CrearPedidoAsync(customer, "FISICO", request.TipoPedido, request.FechaEntrega,
             request.HoraEntrega, request.Direccion, request.Items, request.Notas,
-            entregaInmediata: esInstantaneo);
+            entregaInmediata: esInstantaneo,
+            montoPagado: request.MontoPagado, metodoPago: request.MetodoPago,
+            costoEnvio: request.CostoEnvio);
     }
 
     // ── Mis pedidos ───────────────────────────────────────────────
@@ -122,6 +124,50 @@ public class OrderService : IOrderService
         return MapToDto(order);
     }
 
+    // ── Registrar pago (anticipo / liquidación posterior) ──────────
+    public async Task<OrderResponseDto> RegistrarPagoAsync(Guid orderId, RegisterPaymentRequestDto request)
+    {
+        var order = await ObtenerConDetalleAsync(orderId);
+
+        if (order.EstadoPedido == "CANCELADO")
+            throw new AppException("No se pueden registrar pagos sobre un pedido cancelado.");
+
+        if (request.Monto > order.SaldoPendiente)
+            throw new AppException(
+                $"El monto (${request.Monto}) excede el saldo pendiente (${order.SaldoPendiente}).");
+
+        var nuevoSaldo = order.SaldoPendiente - request.Monto;
+
+        var payment = new Payment
+        {
+            Id        = Guid.NewGuid(),
+            OrderId   = order.Id,
+            Monto     = request.Monto,
+            TipoPago  = nuevoSaldo == 0 ? "LIQUIDACION" : "ANTICIPO",
+            Metodo    = request.Metodo.Trim().ToUpper(),
+            FechaPago = DateTime.UtcNow,
+            Estado    = "REGISTRADO"
+        };
+
+        await using var tx = await _context.Database.BeginTransactionAsync();
+
+        // Se guardan por separado (INSERT de payments, luego UPDATE de orders)
+        // dentro de la misma transacción: mezclar ambas operaciones en un solo
+        // SaveChanges producía un DbUpdateConcurrencyException espurio.
+        _context.Payments.Add(payment);
+        await _context.SaveChangesAsync();
+
+        order.SaldoPendiente = nuevoSaldo;
+        await _context.SaveChangesAsync();
+
+        await tx.CommitAsync();
+
+        _logger.LogInformation("Pago registrado: Pedido {Id} | Monto: {Monto} | Saldo restante: {Saldo}",
+            orderId, request.Monto, nuevoSaldo);
+
+        return MapToDto(order);
+    }
+
     // ── Admin: listar ─────────────────────────────────────────────
     public async Task<PagedResultDto<OrderSummaryDto>> ListarAdminAsync(
         string? estado, DateOnly? desde, DateOnly? hasta, int page, int size, bool archivado = false)
@@ -159,9 +205,10 @@ public class OrderService : IOrderService
         Customer customer, string canal, string tipo,
         DateOnly fechaEntrega, TimeOnly? horaEntrega,
         DireccionDto? direccion, List<OrderItemRequestDto> items, string? notas,
-        bool entregaInmediata = false)
+        bool entregaInmediata = false,
+        decimal? montoPagado = null, string? metodoPago = null, decimal? costoEnvio = null)
     {
-        decimal total = 0;
+        decimal total = costoEnvio ?? 0;
         var orderItems = new List<OrderItem>();
 
         foreach (var item in items)
@@ -181,6 +228,25 @@ public class OrderService : IOrderService
             });
         }
 
+        // Cuánto se cobra al crear el pedido: si no se especifica un monto,
+        // una venta instantánea de mostrador se asume pagada en su totalidad
+        // (comportamiento previo); un pedido anticipado sin monto queda sin abono.
+        // Si se asume pagada sin que nos digan el método, no se registra un
+        // Payment (no inventamos un método), solo se salda SaldoPendiente.
+        decimal pagado;
+        var metodoUsado = metodoPago;
+        if (montoPagado.HasValue)
+        {
+            if (montoPagado.Value > 0 && string.IsNullOrWhiteSpace(metodoPago))
+                throw new AppException("Debe indicar el método de pago para registrar el cobro.");
+            pagado = Math.Min(montoPagado.Value, total);
+        }
+        else
+        {
+            pagado = entregaInmediata ? total : 0;
+            metodoUsado = null;
+        }
+
         var order = new Order
         {
             Id                          = Guid.NewGuid(),
@@ -194,7 +260,8 @@ public class OrderService : IOrderService
             FechaEntrega                = fechaEntrega,
             HoraEntrega                 = horaEntrega,
             Total                       = total,
-            SaldoPendiente              = entregaInmediata ? 0 : total,
+            CostoEnvio                  = costoEnvio,
+            SaldoPendiente              = total - pagado,
             Notas                       = notas,
             DireccionEntregaCalle       = direccion?.Calle ?? "",
             DireccionEntregaColonia     = direccion?.Colonia ?? "",
@@ -206,9 +273,23 @@ public class OrderService : IOrderService
 
         foreach (var oi in orderItems) { oi.OrderId = order.Id; order.OrderItems.Add(oi); }
 
+        if (pagado > 0 && !string.IsNullOrWhiteSpace(metodoUsado))
+        {
+            order.Payments.Add(new Payment
+            {
+                Id        = Guid.NewGuid(),
+                OrderId   = order.Id,
+                Monto     = pagado,
+                TipoPago  = pagado >= total ? "TOTAL" : "ANTICIPO",
+                Metodo    = metodoUsado.Trim().ToUpper(),
+                FechaPago = DateTime.UtcNow,
+                Estado    = "REGISTRADO"
+            });
+        }
+
         _context.Orders.Add(order);
         await _context.SaveChangesAsync();
-        _logger.LogInformation("Pedido creado: {Id} | Total: {Total}", order.Id, total);
+        _logger.LogInformation("Pedido creado: {Id} | Total: {Total} | Pagado: {Pagado}", order.Id, total, pagado);
 
         return MapToDto(await ObtenerConDetalleAsync(order.Id));
     }
@@ -217,6 +298,7 @@ public class OrderService : IOrderService
         => await _context.Orders
             .Include(o => o.Customer)
             .Include(o => o.OrderItems).ThenInclude(oi => oi.Product)
+            .Include(o => o.Payments)
             .FirstOrDefaultAsync(o => o.Id == id)
             ?? throw new NotFoundException("Pedido", id);
 
@@ -228,6 +310,8 @@ public class OrderService : IOrderService
         if (size > 100) size = 100;
 
         var total = await query.CountAsync();
+        // Recaudación bruta: suma de TODOS los pedidos filtrados, no solo la página.
+        var sumaTotal = total == 0 ? 0m : await query.SumAsync(o => o.Total);
         var items = await query.Skip((page - 1) * size).Take(size)
             .Select(o => new OrderSummaryDto
             {
@@ -246,7 +330,8 @@ public class OrderService : IOrderService
             Total        = total,
             Pagina       = page,
             TamanoPagina = size,
-            TotalPaginas = (int)Math.Ceiling(total / (double)size)
+            TotalPaginas = (int)Math.Ceiling(total / (double)size),
+            SumaTotal    = sumaTotal
         };
     }
 
@@ -282,6 +367,15 @@ public class OrderService : IOrderService
             Cantidad       = oi.Cantidad,
             PrecioUnitario = oi.PrecioUnitario,
             Subtotal       = oi.Subtotal
+        }).ToList(),
+        Pagos = (o.Payments ?? []).OrderBy(p => p.FechaPago).Select(p => new PaymentResponseDto
+        {
+            Id        = p.Id,
+            Monto     = p.Monto,
+            TipoPago  = p.TipoPago,
+            Metodo    = p.Metodo,
+            FechaPago = p.FechaPago,
+            Estado    = p.Estado
         }).ToList()
     };
 }

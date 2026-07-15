@@ -65,6 +65,15 @@ public class OrdersController : ControllerBase
         return Ok(ApiResponseDto<OrderResponseDto>.Ok(order, "Pedido actualizado (estado)."));
     }
 
+    // POST /api/orders/{orderId}/payments (registrar anticipo o liquidación)
+    [HttpPost("{orderId:guid}/payments")]
+    [Authorize(Roles = "ADMIN,EMPLEADO")]
+    public async Task<IActionResult> RegistrarPago(Guid orderId, [FromBody] RegisterPaymentRequestDto request)
+    {
+        var order = await _orderService.RegistrarPagoAsync(orderId, request);
+        return Ok(ApiResponseDto<OrderResponseDto>.Ok(order, "Pago registrado correctamente."));
+    }
+
     private Guid? ObtenerUsuarioId()
     {
         var claim = User.FindFirst("sub")?.Value

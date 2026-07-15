@@ -6,6 +6,7 @@ namespace FloreriaBautista.Services.Interfaces;
 public interface IProductService
 {
     Task<PagedResultDto<ProductSummaryDto>> ListarPublicosAsync(string? busqueda, string? categoria, string? catalogo, int page, int size);
+    Task<PagedResultDto<ProductSummaryDto>> ListarParaEmpleadoAsync(string? busqueda, string? categoria, string? catalogo, int page, int size);
     Task<ProductResponseDto>               ObtenerPublicoAsync(Guid id);
     Task<ProductResponseDto>               ObtenerAdminAsync(Guid id);
     Task<PagedResultDto<ProductSummaryDto>> ListarAdminAsync(string? busqueda, string? estado, int page, int size);

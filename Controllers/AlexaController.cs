@@ -33,7 +33,8 @@ public class AlexaController : ControllerBase
         [FromQuery] bool? bajoMinimo,
         [FromQuery] string? busqueda,
         [FromQuery] int page = 1,
-        [FromQuery] int size = 20)
+        [FromQuery] int size = 20,
+        [FromQuery] int diasConsumo = 30)
     {
         var query = _context.InventoryItems.Where(i => i.Activo);
 
@@ -72,6 +73,10 @@ public class AlexaController : ControllerBase
                 Activo = i.Activo
             })
             .ToListAsync();
+
+        var consumo = await _inventoryService.ObtenerConsumoRecienteAsync(diasConsumo);
+        foreach (var item in items)
+            item.UnidadesConsumidas = consumo.GetValueOrDefault(item.Id);
 
         var resultado = new PagedResultDto<InventoryItemDto>
         {
@@ -190,7 +195,7 @@ public class AlexaController : ControllerBase
 
     // GET /api/alexa/inventory/bajo-stock
     [HttpGet("inventory/bajo-stock")]
-    public async Task<IActionResult> GetBajoStock()
+    public async Task<IActionResult> GetBajoStock([FromQuery] int diasConsumo = 30)
     {
         var items = await _context.InventoryItems
             .Where(i => i.Activo && i.StockActual <= i.StockMinimo)
@@ -204,7 +209,18 @@ public class AlexaController : ControllerBase
             })
             .ToListAsync();
 
-        return Ok(items);
+        var consumo = await _inventoryService.ObtenerConsumoRecienteAsync(diasConsumo);
+        var resultado = items.Select(i => new
+        {
+            i.Id,
+            i.Nombre,
+            i.StockActual,
+            i.StockMinimo,
+            i.UnidadMedida,
+            UnidadesConsumidas = consumo.GetValueOrDefault(i.Id)
+        });
+
+        return Ok(resultado);
     }
 
     // GET /api/alexa/dashboard?periodo=dia|semana|mes
@@ -263,7 +279,9 @@ public class AlexaController : ControllerBase
 
             var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production" ? "prod" : "test";
             var n8nUrl = Environment.GetEnvironmentVariable("N8N_REABASTECER_WEBHOOK_URL")
-                ?? "https://edith-n8n.btxyoq.easypanel.host/webhook/reabastecer";
+                ?? (environment == "prod"
+                    ? "https://edith-n8n.btxyoq.easypanel.host/webhook/reabastecer"
+                    : "https://edith-n8n.btxyoq.easypanel.host/webhook-test/reabastecer");
 
             Console.WriteLine("\n📍 [PASO 3] Enviando a n8n...");
             Console.WriteLine($"   URL: {n8nUrl}");

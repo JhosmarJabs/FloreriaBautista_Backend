@@ -27,6 +27,16 @@ public class CreatePhysicalOrderRequestDto
     public DireccionDto?       Direccion    { get; set; }
     [Required] [MinLength(1)]
     public List<OrderItemRequestDto> Items  { get; set; } = [];
+
+    // Lo que el empleado cobra al momento de registrar el pedido (puede ser
+    // el total completo o solo un anticipo). Si es null/0 no se registra pago.
+    [Range(0, double.MaxValue)]
+    public decimal?            MontoPagado  { get; set; }
+    // Requerido solo si MontoPagado > 0. EFECTIVO / TARJETA / TRANSFERENCIA / OTRO
+    public string?             MetodoPago   { get; set; }
+    // Costo de envío a domicilio (null/0 si el cliente recoge en sucursal).
+    [Range(0, double.MaxValue)]
+    public decimal?            CostoEnvio   { get; set; }
 }
 
 public class DireccionDto

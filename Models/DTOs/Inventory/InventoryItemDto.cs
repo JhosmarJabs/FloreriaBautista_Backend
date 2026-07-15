@@ -16,6 +16,7 @@ public class InventoryItemDto
     public string? ImagenUrl    { get; set; }
     public bool    Activo       { get; set; }
     public bool    BajoMinimo   => StockActual <= StockMinimo;
+    public int     UnidadesConsumidas { get; set; }
 }
 
 public class CreateInventoryItemDto

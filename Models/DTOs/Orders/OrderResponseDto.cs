@@ -18,6 +18,7 @@ public class OrderResponseDto
 
     public DireccionDto             Direccion { get; set; } = null!;
     public List<OrderItemResponseDto> Items   { get; set; } = [];
+    public List<PaymentResponseDto>   Pagos   { get; set; } = [];
 }
 
 public class OrderItemResponseDto

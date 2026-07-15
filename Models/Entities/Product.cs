@@ -20,4 +20,5 @@ public class Product
     public ICollection<ProductCustomizationOption> ProductCustomizationOptions  { get; set; } = [];
     public ICollection<OrderItem>                  OrderItems                   { get; set; } = [];
     public ICollection<ProductRecipe>              ProductRecipes               { get; set; } = [];
+    public ICollection<QuickSaleTemplateItem>      QuickSaleTemplateItems       { get; set; } = [];
 }
