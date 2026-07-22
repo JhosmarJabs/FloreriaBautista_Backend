@@ -9,6 +9,12 @@ public class SiteSettings
     public string  Telefono        { get; set; } = string.Empty;
     public string  Correo          { get; set; } = string.Empty;
     public string  Direccion       { get; set; } = string.Empty;
+    public string  DireccionUrl    { get; set; } = string.Empty;
+
+    // ── Redes sociales ───────────────────────────────────────────────
+    public string  FacebookUrl     { get; set; } = string.Empty;
+    public string  InstagramUrl    { get; set; } = string.Empty;
+    public string  WhatsappUrl     { get; set; } = string.Empty;
 
     // ── Banner del hero (uno activo a la vez) ────────────────────────
     public string  BannerTitulo    { get; set; } = string.Empty;

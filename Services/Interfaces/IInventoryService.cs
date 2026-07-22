@@ -15,6 +15,7 @@ public interface IInventoryService
     
     // Historial y Predicción
     Task<InventoryHistoryDto> ObtenerHistorialAsync(Guid inventoryItemId);
+    Task<SupplyForecastDto>   ObtenerPrediccionSurtidoAsync(Guid inventoryItemId);
     Task                      RegistrarSnapshotDiarioAsync();
     Task<InventoryKpisDto>    ObtenerKpisAsync();
     Task<InventoryItemDto?>   ResolverCoincidenciaInsumoAsync(string termino);

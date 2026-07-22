@@ -11,5 +11,10 @@ public class Catalogo
     public DateTime CreadoEn      { get; set; } = DateTime.UtcNow;
     public DateTime ActualizadoEn { get; set; } = DateTime.UtcNow;
 
+    // Ventana de la festividad en formato "MM-DD" (sin año, recurrente cada año).
+    // Ej: San Valentín = '02-07' a '02-14'. Null = catálogo sin temporada asociada.
+    public string? MesDiaInicio { get; set; }
+    public string? MesDiaFin    { get; set; }
+
     public ICollection<ProductCatalogo> ProductCatalogos { get; set; } = [];
 }

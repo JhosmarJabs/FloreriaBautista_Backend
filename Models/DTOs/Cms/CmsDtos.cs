@@ -14,6 +14,10 @@ public class SiteSettingsDto
     public string    Telefono        { get; set; } = string.Empty;
     public string    Correo          { get; set; } = string.Empty;
     public string    Direccion       { get; set; } = string.Empty;
+    public string    DireccionUrl    { get; set; } = string.Empty;
+    public string    FacebookUrl     { get; set; } = string.Empty;
+    public string    InstagramUrl    { get; set; } = string.Empty;
+    public string    WhatsappUrl     { get; set; } = string.Empty;
     public string    BannerTitulo    { get; set; } = string.Empty;
     public string    BannerSubtitulo { get; set; } = string.Empty;
     public string    BannerCta       { get; set; } = string.Empty;

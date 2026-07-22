@@ -14,6 +14,10 @@ public class SiteSettingsConfiguration : IEntityTypeConfiguration<SiteSettings>
         builder.Property(s => s.Telefono).HasMaxLength(30);
         builder.Property(s => s.Correo).HasMaxLength(150);
         builder.Property(s => s.Direccion).HasMaxLength(255);
+        builder.Property(s => s.DireccionUrl).HasMaxLength(500);
+        builder.Property(s => s.FacebookUrl).HasMaxLength(300);
+        builder.Property(s => s.InstagramUrl).HasMaxLength(300);
+        builder.Property(s => s.WhatsappUrl).HasMaxLength(300);
         builder.Property(s => s.BannerTitulo).HasMaxLength(200);
         builder.Property(s => s.BannerSubtitulo).HasMaxLength(255);
         builder.Property(s => s.BannerCta).HasMaxLength(60);

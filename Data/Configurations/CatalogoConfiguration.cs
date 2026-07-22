@@ -16,5 +16,7 @@ public class CatalogoConfiguration : IEntityTypeConfiguration<Catalogo>
         builder.Property(c => c.ImagenUrl).HasMaxLength(255);
         builder.Property(c => c.CreadoEn).HasDefaultValueSql("NOW()");
         builder.Property(c => c.ActualizadoEn).HasDefaultValueSql("NOW()");
+        builder.Property(c => c.MesDiaInicio).HasMaxLength(5);
+        builder.Property(c => c.MesDiaFin).HasMaxLength(5);
     }
 }

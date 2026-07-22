@@ -95,6 +95,8 @@ public class AdminCatalogosController : ControllerBase
         item.Descripcion = request.Descripcion ?? item.Descripcion;
         item.ImagenUrl = request.ImagenUrl ?? item.ImagenUrl;
         item.Activo = request.Activo;
+        item.MesDiaInicio = request.MesDiaInicio;
+        item.MesDiaFin = request.MesDiaFin;
         item.ActualizadoEn = DateTime.UtcNow;
 
         // Limpiar relaciones anteriores en memoria y dejar que EF Core las rastree como eliminadas

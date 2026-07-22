@@ -2,6 +2,7 @@ using Datadog.Trace;
 using Datadog.Trace.Configuration;
 using DotNetEnv;
 using FloreriaBautista.Extensions;
+using FloreriaBautista.Json;
 using FloreriaBautista.Middleware;
 
 // Carga el archivo .env según el entorno.
@@ -36,7 +37,14 @@ if (!string.IsNullOrWhiteSpace(alexaApiKeyEnv))
 }
 
 builder.Services.AddControllers()
-    .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNameCaseInsensitive = true);
+    .AddJsonOptions(o =>
+    {
+        o.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+        // Emitir todos los DateTime como UTC con sufijo 'Z' para que el frontend
+        // los convierta correctamente a hora local (ver UtcDateTimeConverter).
+        o.JsonSerializerOptions.Converters.Add(new UtcDateTimeConverter());
+        o.JsonSerializerOptions.Converters.Add(new NullableUtcDateTimeConverter());
+    });
 
 builder.Services.AddCors(options =>
 {

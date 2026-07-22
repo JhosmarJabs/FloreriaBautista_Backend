@@ -91,6 +91,16 @@ public class AdminInventoryController : ControllerBase
         return Ok(ApiResponseDto<InventoryHistoryDto>.Ok(historial));
     }
 
+    // GET /api/admin/inventory/{id}/prediccion-surtido
+    // Propuesta 1 (modelos predictivos): cantidad sugerida a surtir la próxima semana,
+    // calculada por regresión lineal sobre el consumo semanal + módulo de temporada.
+    [HttpGet("{id:guid}/prediccion-surtido")]
+    public async Task<IActionResult> ObtenerPrediccionSurtido(Guid id)
+    {
+        var prediccion = await _inventoryService.ObtenerPrediccionSurtidoAsync(id);
+        return Ok(ApiResponseDto<SupplyForecastDto>.Ok(prediccion));
+    }
+
     // POST /api/admin/inventory/snapshots
     [HttpPost("snapshots")]
     [Authorize(Roles = "ADMIN")]

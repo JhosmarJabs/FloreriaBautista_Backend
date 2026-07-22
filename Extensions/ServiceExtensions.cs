@@ -10,6 +10,7 @@ using FloreriaBautista.Services;
 using FloreriaBautista.Services.Audit;
 using FloreriaBautista.Services.ImportExport;
 using FloreriaBautista.Services.Reports;
+using FloreriaBautista.Services.Recommendations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
@@ -77,6 +78,7 @@ public static class ServiceExtensions
         services.AddSingleton<BackupSchedulerService>();
         services.AddHostedService(sp => sp.GetRequiredService<BackupSchedulerService>());
         services.AddHostedService<OrderArchiverService>();
+        services.AddHostedService<PredictiveModelsSchedulerService>();
 
         // TODO: Registrar aquí los demás módulos
         services.AddScoped<IAuditService, AuditService>();
@@ -88,6 +90,10 @@ public static class ServiceExtensions
         services.AddScoped<IInventoryService, InventoryService>();
         services.AddScoped<ReportsService>();
         services.AddScoped<CmsService>();
+
+        // ── Modelos predictivos ─────────────────────────────────────
+        services.AddScoped<IRecommendationService, RecommendationService>();
+        services.AddScoped<ICustomerSegmentationService, Services.Analytics.CustomerSegmentationService>();
 
         return services;
     }

@@ -25,6 +25,10 @@ public class CmsService
         settings.Telefono        = request.Telefono ?? settings.Telefono;
         settings.Correo          = request.Correo ?? settings.Correo;
         settings.Direccion       = request.Direccion ?? settings.Direccion;
+        settings.DireccionUrl    = request.DireccionUrl ?? settings.DireccionUrl;
+        settings.FacebookUrl     = request.FacebookUrl ?? settings.FacebookUrl;
+        settings.InstagramUrl    = request.InstagramUrl ?? settings.InstagramUrl;
+        settings.WhatsappUrl     = request.WhatsappUrl ?? settings.WhatsappUrl;
         settings.BannerTitulo    = request.BannerTitulo ?? settings.BannerTitulo;
         settings.BannerSubtitulo = request.BannerSubtitulo ?? settings.BannerSubtitulo;
         settings.BannerCta       = request.BannerCta ?? settings.BannerCta;
@@ -52,6 +56,10 @@ public class CmsService
         Telefono        = s.Telefono,
         Correo          = s.Correo,
         Direccion       = s.Direccion,
+        DireccionUrl    = s.DireccionUrl,
+        FacebookUrl     = s.FacebookUrl,
+        InstagramUrl    = s.InstagramUrl,
+        WhatsappUrl     = s.WhatsappUrl,
         BannerTitulo    = s.BannerTitulo,
         BannerSubtitulo = s.BannerSubtitulo,
         BannerCta       = s.BannerCta,

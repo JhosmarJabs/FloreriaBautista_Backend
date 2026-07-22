@@ -50,6 +50,10 @@ public class AppDbContext : DbContext
     public DbSet<SchedulerSettings> SchedulerSettings  => Set<SchedulerSettings>();
     public DbSet<SiteSettings>      SiteSettings       => Set<SiteSettings>();
 
+    // ── Modelos predictivos ─────────────────────────────────────────
+    public DbSet<AssociationRule>  AssociationRules  => Set<AssociationRule>();
+    public DbSet<CustomerSegment>  CustomerSegments  => Set<CustomerSegment>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

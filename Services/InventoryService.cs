@@ -355,6 +355,153 @@ public class InventoryService : IInventoryService
         return result;
     }
 
+    // ── Propuesta 1: Predicción de cantidad a surtir (regresión + módulo de temporada) ─────
+    // Agrupa inventory_movements (SALIDA) por semana ISO, cruza con catalogos (rango mes-día,
+    // sin año) para etiquetar festividades, y proyecta la semana siguiente con una regresión
+    // lineal simple sobre el historial, ajustada por año anterior y por boost estacional.
+    public async Task<SupplyForecastDto> ObtenerPrediccionSurtidoAsync(Guid inventoryItemId)
+    {
+        var item = await _context.InventoryItems.FindAsync(inventoryItemId)
+            ?? throw new NotFoundException("InventoryItem", inventoryItemId);
+
+        var festividades = await _context.Catalogos
+            .Where(c => c.Activo && c.MesDiaInicio != null && c.MesDiaFin != null)
+            .Select(c => new { c.Nombre, c.MesDiaInicio, c.MesDiaFin })
+            .ToListAsync();
+
+        var movimientos = await _context.InventoryMovements
+            .Where(m => m.InventoryItemId == inventoryItemId && m.TipoMovimiento == "SALIDA")
+            .OrderBy(m => m.FechaHora)
+            .Select(m => new { m.FechaHora, m.Cantidad })
+            .ToListAsync();
+
+        string? TemporadaDeSemana(DateOnly lunes)
+        {
+            for (var i = 0; i < 7; i++)
+            {
+                var mesDia = lunes.AddDays(i).ToString("MM-dd");
+                var f = festividades.FirstOrDefault(x => EnVentanaMesDia(mesDia, x.MesDiaInicio!, x.MesDiaFin!));
+                if (f != null) return f.Nombre;
+            }
+            return null;
+        }
+
+        var semanas = movimientos
+            .GroupBy(m => (Year: System.Globalization.ISOWeek.GetYear(m.FechaHora), Week: System.Globalization.ISOWeek.GetWeekOfYear(m.FechaHora)))
+            .Select(g => new
+            {
+                g.Key.Year,
+                g.Key.Week,
+                Cantidad = g.Sum(m => m.Cantidad)
+            })
+            .OrderBy(g => g.Year).ThenBy(g => g.Week)
+            .ToList();
+
+        var historico = semanas.Select(s =>
+        {
+            var lunes = DateOnly.FromDateTime(System.Globalization.ISOWeek.ToDateTime(s.Year, s.Week, DayOfWeek.Monday));
+            return new WeeklySupplyPointDto
+            {
+                Semana           = $"{s.Year}-W{s.Week:D2}",
+                InicioSemana     = lunes,
+                CantidadConsumida = s.Cantidad,
+                Temporada        = TemporadaDeSemana(lunes)
+            };
+        }).ToList();
+
+        // ── Semana objetivo: la próxima semana ISO a partir de hoy ──────────────
+        var hoy           = DateTime.UtcNow.Date;
+        var lunesActual   = System.Globalization.ISOWeek.ToDateTime(System.Globalization.ISOWeek.GetYear(hoy), System.Globalization.ISOWeek.GetWeekOfYear(hoy), DayOfWeek.Monday);
+        var lunesObjetivo = DateOnly.FromDateTime(lunesActual.AddDays(7));
+        var targetYear    = System.Globalization.ISOWeek.GetYear(lunesObjetivo.ToDateTime(TimeOnly.MinValue));
+        var targetWeek    = System.Globalization.ISOWeek.GetWeekOfYear(lunesObjetivo.ToDateTime(TimeOnly.MinValue));
+        var temporadaObjetivo = TemporadaDeSemana(lunesObjetivo);
+
+        // ── Regresión lineal simple sobre las últimas 12 semanas ────────────────
+        var muestra = historico.Count > 12 ? historico.Skip(historico.Count - 12).ToList() : historico;
+        var n = muestra.Count;
+        decimal forecast;
+        var metodo = new List<string>();
+
+        if (n == 0)
+        {
+            forecast = 0;
+            metodo.Add("Sin historial de movimientos SALIDA registrados para este insumo.");
+        }
+        else if (n == 1)
+        {
+            forecast = muestra[0].CantidadConsumida;
+            metodo.Add("Historial insuficiente para regresión (1 semana); se usa el último valor conocido.");
+        }
+        else
+        {
+            double sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+            for (var i = 0; i < n; i++)
+            {
+                sumX  += i;
+                sumY  += muestra[i].CantidadConsumida;
+                sumXY += i * muestra[i].CantidadConsumida;
+                sumXX += i * i;
+            }
+            var denom = (n * sumXX) - (sumX * sumX);
+            var slope = denom != 0 ? ((n * sumXY) - (sumX * sumY)) / denom : 0;
+            var intercept = (sumY - (slope * sumX)) / n;
+            var regresion = intercept + (slope * n);
+            metodo.Add($"Regresión lineal sobre las últimas {n} semanas (pendiente {slope:F2}).");
+
+            // Comparación con la misma semana el año anterior, si existe
+            var mismaSemanaAnioAnterior = historico.FirstOrDefault(h => h.InicioSemana.Year == targetYear - 1 &&
+                System.Globalization.ISOWeek.GetWeekOfYear(h.InicioSemana.ToDateTime(TimeOnly.MinValue)) == targetWeek);
+
+            forecast = mismaSemanaAnioAnterior != null
+                ? (decimal)((0.6 * regresion) + (0.4 * mismaSemanaAnioAnterior.CantidadConsumida))
+                : (decimal)regresion;
+
+            if (mismaSemanaAnioAnterior != null)
+                metodo.Add($"Ajustado con la misma semana del año anterior ({mismaSemanaAnioAnterior.CantidadConsumida} {item.UnidadMedida ?? "u"}).");
+        }
+
+        // ── Boost estacional si la semana objetivo cae en una festividad ───────
+        if (temporadaObjetivo != null)
+        {
+            var semanasTemporada = historico.Where(h => h.Temporada == temporadaObjetivo).Select(h => (decimal)h.CantidadConsumida).ToList();
+            var semanasNormales  = historico.Where(h => h.Temporada == null).Select(h => (decimal)h.CantidadConsumida).ToList();
+
+            decimal ratio = 1.5m; // valor por defecto cuando no hay suficiente historial propio de la festividad
+            if (semanasTemporada.Count > 0 && semanasNormales.Count > 0 && semanasNormales.Average() > 0)
+                ratio = Math.Clamp(semanasTemporada.Average() / semanasNormales.Average(), 1m, 4m);
+
+            forecast *= ratio;
+            metodo.Add($"Boost estacional por '{temporadaObjetivo}' (factor x{ratio:F2}).");
+        }
+
+        var cantidadSugerida = (int)Math.Round(Math.Max(0, forecast), MidpointRounding.AwayFromZero);
+
+        return new SupplyForecastDto
+        {
+            InventoryItemId    = item.Id,
+            Nombre             = item.Nombre,
+            UnidadMedida       = item.UnidadMedida,
+            Historico          = historico,
+            SemanaObjetivo     = $"{targetYear}-W{targetWeek:D2}",
+            TemporadaObjetivo  = temporadaObjetivo,
+            CantidadSugerida   = cantidadSugerida,
+            StockActual        = item.StockActual,
+            CoberturaStockPct  = cantidadSugerida > 0 ? Math.Round((decimal)item.StockActual / cantidadSugerida * 100, 1) : 100,
+            MetodoCalculo      = string.Join(" ", metodo)
+        };
+    }
+
+    // Compara un mes-día ("MM-dd") contra la ventana [inicio, fin] de una festividad, ambos en
+    // el mismo formato sin año. Si fin < inicio (ej. Navidad: 12-15 a 01-06), la ventana cruza
+    // el fin de año y se evalúa como unión de dos rangos en vez de un BETWEEN directo.
+    private static bool EnVentanaMesDia(string mesDia, string inicio, string fin)
+    {
+        return string.Compare(inicio, fin, StringComparison.Ordinal) <= 0
+            ? string.Compare(mesDia, inicio, StringComparison.Ordinal) >= 0 && string.Compare(mesDia, fin, StringComparison.Ordinal) <= 0
+            : string.Compare(mesDia, inicio, StringComparison.Ordinal) >= 0 || string.Compare(mesDia, fin, StringComparison.Ordinal) <= 0;
+    }
+
     public async Task<InventoryKpisDto> ObtenerKpisAsync()
     {
         var query = _context.InventoryItems.Where(i => i.Activo);
