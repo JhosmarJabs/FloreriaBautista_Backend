@@ -88,7 +88,33 @@ public class OrderService : IOrderService
             .Where(o => o.CustomerId == customer.Id)
             .OrderByDescending(o => o.FechaCreacion);
 
-        return await PaginarAsync(query, page, size);
+        var resultado = await PaginarAsync(query, page, size);
+
+        // Adjuntar los productos de cada pedido para mostrarlos en "Mis Pedidos".
+        var ids = resultado.Items.Select(i => i.Id).ToList();
+        var itemsPorOrden = await _context.OrderItems
+            .Where(oi => ids.Contains(oi.OrderId))
+            .Select(oi => new
+            {
+                oi.OrderId,
+                Dto = new OrderSummaryItemDto
+                {
+                    ProductName  = oi.Product.Nombre,
+                    ProductImage = oi.Product.ImagenUrl,
+                    Quantity     = oi.Cantidad,
+                    Price        = oi.PrecioUnitario
+                }
+            })
+            .ToListAsync();
+
+        var porOrden = itemsPorOrden
+            .GroupBy(x => x.OrderId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Dto).ToList());
+
+        foreach (var o in resultado.Items)
+            o.Items = porOrden.TryGetValue(o.Id, out var lista) ? lista : new();
+
+        return resultado;
     }
 
     // ── Mi pedido por ID ──────────────────────────────────────────
