@@ -11,6 +11,7 @@ public class Address
     public string  Estado      { get; set; } = string.Empty;
     public string? Cp          { get; set; }
     public string? Referencias { get; set; }
+    public bool    EsPrincipal { get; set; } = false;
     public DateTime CreadoEn  { get; set; } = DateTime.UtcNow;
 
     public Customer Customer { get; set; } = null!;

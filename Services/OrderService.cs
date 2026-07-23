@@ -38,7 +38,8 @@ public class OrderService : IOrderService
             ?? throw new AppException("No se encontró el perfil de cliente para este usuario.");
 
         return await CrearPedidoAsync(customer, "WEB", request.TipoPedido, request.FechaEntrega,
-            request.HoraEntrega, request.Direccion, request.Items, request.Notas);
+            request.HoraEntrega, request.Direccion, request.Items, request.Notas,
+            costoEnvio: request.CostoEnvio);
     }
 
     // ── Crear pedido físico ───────────────────────────────────────

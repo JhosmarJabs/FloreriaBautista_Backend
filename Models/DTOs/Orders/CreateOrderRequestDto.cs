@@ -8,6 +8,9 @@ public class CreateOrderRequestDto
     public TimeOnly?           HoraEntrega  { get; set; }
     public string              TipoPedido   { get; set; } = "INSTANTANEO";
     public string?             Notas        { get; set; }
+    // Costo de envío calculado por zona (0 = envío gratis). Se suma al Total del pedido.
+    [Range(0, double.MaxValue)]
+    public decimal?            CostoEnvio   { get; set; }
 
     [Required] public DireccionDto Direccion { get; set; } = null!;
     [Required] [MinLength(1)]

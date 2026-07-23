@@ -17,6 +17,7 @@ public class AddressConfiguration : IEntityTypeConfiguration<Address>
         builder.Property(a => a.Cp).HasMaxLength(10);
         builder.Property(a => a.Etiqueta).HasMaxLength(50);
         builder.Property(a => a.Referencias).HasMaxLength(500);
+        builder.Property(a => a.EsPrincipal).HasDefaultValue(false);
         builder.Property(a => a.CreadoEn).HasDefaultValueSql("NOW()");
     }
 }

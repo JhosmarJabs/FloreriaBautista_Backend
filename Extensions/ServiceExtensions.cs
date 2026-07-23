@@ -83,6 +83,8 @@ public static class ServiceExtensions
         // TODO: Registrar aquí los demás módulos
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IAddressService, AddressService>();
+        services.AddHttpClient<IMercadoPagoService, Services.Payments.MercadoPagoService>();
         services.AddScoped<IExportService, ExportService>();
         services.AddScoped<IImportService, ImportService>();
         services.AddScoped<IProductService, ProductService>();
