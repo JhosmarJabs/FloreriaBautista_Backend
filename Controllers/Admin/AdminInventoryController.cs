@@ -101,6 +101,16 @@ public class AdminInventoryController : ControllerBase
         return Ok(ApiResponseDto<SupplyForecastDto>.Ok(prediccion));
     }
 
+    // GET /api/admin/inventory/reabastecimiento
+    // Propuesta 1 (modelos predictivos): lista de insumos a surtir, cada uno con el consumo
+    // predicho por el modelo y la cantidad sugerida a comprar la próxima semana.
+    [HttpGet("reabastecimiento")]
+    public async Task<IActionResult> ObtenerReabastecimiento()
+    {
+        var lista = await _inventoryService.ObtenerReabastecimientoAsync();
+        return Ok(ApiResponseDto<List<SupplyReplenishmentItemDto>>.Ok(lista));
+    }
+
     // POST /api/admin/inventory/snapshots
     [HttpPost("snapshots")]
     [Authorize(Roles = "ADMIN")]

@@ -489,6 +489,7 @@ public class InventoryService : IInventoryService
                 Historico         = historico,
                 SemanaObjetivo    = EtiquetaSemana(lunesObjetivo),
                 TemporadaObjetivo = temporadaObjetivo,
+                ConsumoPredicho   = 0,
                 CantidadSugerida  = 0,
                 StockActual       = item.StockActual,
                 CoberturaStockPct = 100,
@@ -525,6 +526,7 @@ public class InventoryService : IInventoryService
             Historico         = historico,
             SemanaObjetivo    = EtiquetaSemana(lunesObjetivo),
             TemporadaObjetivo = temporadaObjetivo,
+            ConsumoPredicho   = (int)Math.Round(consumoPredicho, MidpointRounding.AwayFromZero),
             CantidadSugerida  = cantidadSugerida,
             StockActual       = item.StockActual,
             CoberturaStockPct = consumoPredicho > 0
@@ -532,6 +534,57 @@ public class InventoryService : IInventoryService
                 : 100,
             MetodoCalculo     = explicacion
         };
+    }
+
+    // Lista de reabastecimiento: cada insumo con historial de salidas, acompañado de la
+    // predicción del modelo S1 (consumo estimado y cantidad sugerida a surtir la próxima semana).
+    // Es la vista operativa de la Solución 1: qué y cuánto pedirle al proveedor.
+    public async Task<List<SupplyReplenishmentItemDto>> ObtenerReabastecimientoAsync()
+    {
+        // El modelo solo predice insumos con historial de consumo (SALIDA).
+        var idsConMovimiento = await _context.InventoryMovements
+            .Where(m => m.TipoMovimiento == "SALIDA")
+            .Select(m => m.InventoryItemId)
+            .Distinct()
+            .ToListAsync();
+
+        var stockMin = await _context.InventoryItems
+            .Where(i => i.Activo && idsConMovimiento.Contains(i.Id))
+            .Select(i => new { i.Id, i.StockMinimo })
+            .ToDictionaryAsync(i => i.Id, i => i.StockMinimo);
+
+        var lista = new List<SupplyReplenishmentItemDto>();
+        foreach (var id in stockMin.Keys)
+        {
+            try
+            {
+                var f = await ObtenerPrediccionSurtidoAsync(id);
+                lista.Add(new SupplyReplenishmentItemDto
+                {
+                    InventoryItemId   = f.InventoryItemId,
+                    Nombre            = f.Nombre,
+                    UnidadMedida      = f.UnidadMedida,
+                    StockActual       = f.StockActual,
+                    StockMinimo       = stockMin[id],
+                    ConsumoPredicho   = f.ConsumoPredicho,
+                    CantidadSugerida  = f.CantidadSugerida,
+                    SemanaObjetivo    = f.SemanaObjetivo,
+                    TemporadaObjetivo = f.TemporadaObjetivo,
+                    BajoMinimo        = f.StockActual <= stockMin[id],
+                });
+            }
+            catch (Exception ex)
+            {
+                // Un insumo que falle (p. ej. el sidecar rechaza sus variables) no debe tumbar la lista.
+                _logger.LogWarning(ex, "No se pudo predecir el surtido del insumo {Id} para reabastecimiento", id);
+            }
+        }
+
+        // Más urgentes primero: mayor cantidad sugerida a comprar.
+        return lista
+            .OrderByDescending(x => x.CantidadSugerida)
+            .ThenByDescending(x => x.ConsumoPredicho)
+            .ToList();
     }
 
     // Compara un mes-día ("MM-dd") contra la ventana [inicio, fin] de una festividad, ambos en
