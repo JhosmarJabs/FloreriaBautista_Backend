@@ -13,6 +13,10 @@ public class CustomerSegmentConfiguration : IEntityTypeConfiguration<CustomerSeg
         builder.Property(s => s.Id).HasDefaultValueSql("gen_random_uuid()");
         builder.Property(s => s.Grupo).HasMaxLength(20).IsRequired();
         builder.Property(s => s.MontoTotal).HasColumnType("numeric(10,2)");
+        builder.Property(s => s.Sexo).HasMaxLength(10);
+        builder.Property(s => s.Colonia).HasMaxLength(100);
+        builder.Property(s => s.CategoriaFavorita).HasMaxLength(100);
+        builder.Property(s => s.CanalPreferido).HasMaxLength(20);
         builder.Property(s => s.FechaCalculo).HasDefaultValueSql("NOW()");
 
         builder.HasIndex(s => s.CustomerId).IsUnique();

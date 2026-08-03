@@ -24,12 +24,28 @@ public class AdminAnalyticsController : ControllerBase
         _segmentationService   = segmentationService;
     }
 
-    // POST /api/admin/analytics/reglas-asociacion/recalcular
-    [HttpPost("reglas-asociacion/recalcular")]
-    public async Task<IActionResult> RecalcularReglasAsociacion()
+    // GET /api/admin/analytics/recomendador
+    // Estado del artefacto cargado: qué configuración, qué versión de scikit-learn y
+    // cuándo lo generó la libreta. Sirve para comprobar en vivo que el sistema está
+    // usando el mismo artefacto que se reporta en el PDF.
+    [HttpGet("recomendador")]
+    public async Task<IActionResult> ObtenerEstadoRecomendador()
     {
-        var resultado = await _recommendationService.RecalcularReglasAsync();
-        return Ok(ApiResponseDto<RecalcularReglasResultDto>.Ok(resultado, "Reglas de asociación recalculadas."));
+        var estado = await _recommendationService.ObtenerEstadoAsync();
+        return Ok(ApiResponseDto<RecomendadorEstadoDto>.Ok(estado));
+    }
+
+    // POST /api/admin/analytics/recomendador/recargar
+    // Relee recomendador.json desde disco. Es el procedimiento de actualización del modelo
+    // cuando la libreta genera un artefacto nuevo, sin reiniciar el contenedor.
+    [HttpPost("recomendador/recargar")]
+    public async Task<IActionResult> RecargarRecomendador()
+    {
+        var estado = await _recommendationService.RecargarArtefactoAsync();
+        return estado.Disponible
+            ? Ok(ApiResponseDto<RecomendadorEstadoDto>.Ok(estado, "Artefacto del recomendador recargado."))
+            : StatusCode(503, ApiResponseDto<RecomendadorEstadoDto>.Ok(estado,
+                  $"No se pudo cargar el artefacto: {estado.Error}"));
     }
 
     // GET /api/admin/analytics/segmentos-clientes

@@ -32,12 +32,18 @@ public class PredictiveModelsSchedulerService : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         try
         {
+            // Solución 2: no se recalcula el modelo aquí. El artefacto lo produce la libreta;
+            // el backend solo lo relee por si fue regenerado desde la última revisión.
             var recomendaciones = scope.ServiceProvider.GetRequiredService<IRecommendationService>();
-            var reglas = await recomendaciones.RecalcularReglasAsync();
-            _logger.LogInformation("Reglas de asociación recalculadas automáticamente: {Reglas} reglas sobre {Ordenes} pedidos.",
-                reglas.ReglasGeneradas, reglas.TransaccionesUsadas);
+            var estado = await recomendaciones.RecargarArtefactoAsync();
+            if (estado.Disponible)
+                _logger.LogInformation(
+                    "Artefacto del recomendador recargado: {Productos} productos, configuración '{Config}', generado {Generado}.",
+                    estado.NProductos, estado.Configuracion, estado.GeneradoEn);
+            else
+                _logger.LogWarning("El artefacto del recomendador no está disponible: {Error}", estado.Error);
         }
-        catch (Exception ex) { _logger.LogError(ex, "Error al recalcular reglas de asociación automáticamente"); }
+        catch (Exception ex) { _logger.LogError(ex, "Error al recargar el artefacto del recomendador"); }
 
         try
         {

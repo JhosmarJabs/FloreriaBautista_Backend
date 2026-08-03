@@ -94,6 +94,18 @@ public static class ServiceExtensions
         services.AddScoped<CmsService>();
 
         // ── Modelos predictivos ─────────────────────────────────────
+        // Solución 1 (regresión): la inferencia vive en el sidecar ml-service, que carga
+        // el mismo modelo_surtido.pkl que produjo la libreta. Aquí solo se arma el cliente.
+        services.AddHttpClient<IMlPredictionClient, Services.Analytics.MlPredictionClient>(client =>
+        {
+            var url = Environment.GetEnvironmentVariable("ML_SERVICE_URL") ?? "http://ml-service:8000";
+            client.BaseAddress = new Uri(url);
+            client.Timeout     = TimeSpan.FromSeconds(30);
+        });
+
+        // Solución 2 (recomendación): el artefacto es la matriz de similitud. Se carga una
+        // sola vez en memoria como singleton; no hay inferencia que delegar.
+        services.AddSingleton<Services.Recommendations.RecommenderArtifact>();
         services.AddScoped<IRecommendationService, RecommendationService>();
         services.AddScoped<ICustomerSegmentationService, Services.Analytics.CustomerSegmentationService>();
 

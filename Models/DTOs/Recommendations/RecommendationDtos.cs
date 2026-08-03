@@ -6,13 +6,28 @@ public class ProductRecommendationDto
     public string  Nombre     { get; set; } = string.Empty;
     public decimal PrecioBase { get; set; }
     public string? ImagenUrl  { get; set; }
-    public decimal? Confianza { get; set; } // null cuando viene del fallback (top ventas), no de una regla
+
+    // Afinidad acumulada con lo que hay en el carrito (suma de similitudes coseno).
+    // Es null cuando la sugerencia viene del respaldo de más vendidos, no del modelo.
+    public decimal? Afinidad  { get; set; }
+
     public bool    EsFallback { get; set; }
+
+    // Explicación legible del porqué de la sugerencia. El §7 del proyecto exige
+    // "indicar el significado del resultado", no solo mostrar la lista.
+    public string  Motivo     { get; set; } = string.Empty;
 }
 
-public class RecalcularReglasResultDto
+// Estado del artefacto del recomendador. Sustituye al antiguo RecalcularReglasResultDto:
+// las reglas de asociación ya no se usan (ver RecommendationService para el porqué).
+public class RecomendadorEstadoDto
 {
-    public int ReglasGeneradas   { get; set; }
-    public int TransaccionesUsadas { get; set; }
-    public DateTime CalculadoEn   { get; set; }
+    public bool      Disponible     { get; set; }
+    public string?   Configuracion  { get; set; }
+    public string?   Scoring        { get; set; }
+    public string?   VersionSklearn { get; set; }
+    public int       NProductos     { get; set; }
+    public string?   GeneradoEn     { get; set; }   // cuándo la libreta produjo el artefacto
+    public DateTime? CargadoEn      { get; set; }   // cuándo el backend lo leyó de disco
+    public string?   Error          { get; set; }
 }
