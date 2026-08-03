@@ -105,9 +105,9 @@ public class AdminInventoryController : ControllerBase
     // Propuesta 1 (modelos predictivos): lista de insumos a surtir, cada uno con el consumo
     // predicho por el modelo y la cantidad sugerida a comprar la próxima semana.
     [HttpGet("reabastecimiento")]
-    public async Task<IActionResult> ObtenerReabastecimiento()
+    public async Task<IActionResult> ObtenerReabastecimiento([FromQuery] bool refresh = false)
     {
-        var lista = await _inventoryService.ObtenerReabastecimientoAsync();
+        var lista = await _inventoryService.ObtenerReabastecimientoAsync(refresh);
         return Ok(ApiResponseDto<List<SupplyReplenishmentItemDto>>.Ok(lista));
     }
 

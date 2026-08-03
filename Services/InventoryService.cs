@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using FloreriaBautista.Data;
 using FloreriaBautista.Models.DTOs.Analytics;
 using FloreriaBautista.Models.DTOs.Common;
@@ -15,14 +16,22 @@ public class InventoryService : IInventoryService
     private readonly AppDbContext              _context;
     private readonly ILogger<InventoryService> _logger;
     private readonly IMlPredictionClient       _mlClient;
+    private readonly IMemoryCache              _cache;
 
     private static readonly Regex _nonAlphaNumRegex = new(@"[^a-z0-9\s]", RegexOptions.Compiled);
 
-    public InventoryService(AppDbContext context, ILogger<InventoryService> logger, IMlPredictionClient mlClient)
+    // La lista de reabastecimiento ejecuta el modelo por insumo (~decenas de predicciones),
+    // así que se cachea: se calcula una vez y las visitas siguientes la leen al instante.
+    private const string CacheReabastecimiento = "reabastecimiento:v1";
+    private static readonly TimeSpan TtlReabastecimiento = TimeSpan.FromHours(6);
+
+    public InventoryService(AppDbContext context, ILogger<InventoryService> logger,
+                            IMlPredictionClient mlClient, IMemoryCache cache)
     {
         _context  = context;
         _logger   = logger;
         _mlClient = mlClient;
+        _cache    = cache;
     }
 
     // ── Listar ────────────────────────────────────────────────────
@@ -539,7 +548,17 @@ public class InventoryService : IInventoryService
     // Lista de reabastecimiento: cada insumo con historial de salidas, acompañado de la
     // predicción del modelo S1 (consumo estimado y cantidad sugerida a surtir la próxima semana).
     // Es la vista operativa de la Solución 1: qué y cuánto pedirle al proveedor.
-    public async Task<List<SupplyReplenishmentItemDto>> ObtenerReabastecimientoAsync()
+    public async Task<List<SupplyReplenishmentItemDto>> ObtenerReabastecimientoAsync(bool refresh = false)
+    {
+        if (!refresh && _cache.TryGetValue(CacheReabastecimiento, out List<SupplyReplenishmentItemDto>? cacheada) && cacheada is not null)
+            return cacheada;
+
+        var lista = await CalcularReabastecimientoAsync();
+        _cache.Set(CacheReabastecimiento, lista, TtlReabastecimiento);
+        return lista;
+    }
+
+    private async Task<List<SupplyReplenishmentItemDto>> CalcularReabastecimientoAsync()
     {
         // El modelo solo predice insumos con historial de consumo (SALIDA).
         var idsConMovimiento = await _context.InventoryMovements

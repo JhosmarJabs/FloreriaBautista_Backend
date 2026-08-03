@@ -27,6 +27,9 @@ public static class ServiceExtensions
             opt.UseNpgsql(BuildConnectionString())
                .UseSnakeCaseNamingConvention());
 
+        // Caché en memoria (p. ej. la lista de reabastecimiento, que ejecuta el modelo por insumo)
+        services.AddMemoryCache();
+
         // Factory que selecciona la conexión según el rol del usuario (ADMIN vs app_user)
         services.AddHttpContextAccessor();
         services.AddScoped<AppDbContextFactory>();

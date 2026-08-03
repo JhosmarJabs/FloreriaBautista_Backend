@@ -53,5 +53,15 @@ public class PredictiveModelsSchedulerService : BackgroundService
                 segmentos.ClientesProcesados);
         }
         catch (Exception ex) { _logger.LogError(ex, "Error al recalcular segmentación de clientes automáticamente"); }
+
+        try
+        {
+            // Solución 1: precalienta la lista de reabastecimiento (ejecuta el modelo por insumo)
+            // para que la pantalla de admin la lea instantáneamente en vez de calcularla al abrir.
+            var inventario = scope.ServiceProvider.GetRequiredService<IInventoryService>();
+            var reab = await inventario.ObtenerReabastecimientoAsync(refresh: true);
+            _logger.LogInformation("Reabastecimiento precalculado y cacheado: {Insumos} insumos.", reab.Count);
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Error al precalcular el reabastecimiento"); }
     }
 }
