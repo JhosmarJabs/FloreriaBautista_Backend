@@ -578,6 +578,13 @@ public class InventoryService : IInventoryService
             try
             {
                 var f = await ObtenerPrediccionSurtidoAsync(id);
+
+                // Política de compra: surtir hasta cubrir el consumo predicho O, si el insumo está
+                // por debajo del mínimo, al menos reponer hasta el stock mínimo. Se toma el mayor de
+                // los dos, para que un insumo bajo mínimo con consumo bajo igual se sugiera comprar.
+                var objetivo         = Math.Max(f.ConsumoPredicho, stockMin[id]);
+                var cantidadSugerida = Math.Max(0, objetivo - f.StockActual);
+
                 lista.Add(new SupplyReplenishmentItemDto
                 {
                     InventoryItemId   = f.InventoryItemId,
@@ -586,7 +593,7 @@ public class InventoryService : IInventoryService
                     StockActual       = f.StockActual,
                     StockMinimo       = stockMin[id],
                     ConsumoPredicho   = f.ConsumoPredicho,
-                    CantidadSugerida  = f.CantidadSugerida,
+                    CantidadSugerida  = cantidadSugerida,
                     SemanaObjetivo    = f.SemanaObjetivo,
                     TemporadaObjetivo = f.TemporadaObjetivo,
                     BajoMinimo        = f.StockActual <= stockMin[id],
