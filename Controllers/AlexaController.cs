@@ -18,12 +18,15 @@ public class AlexaController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ReportsService _reportsService;
     private readonly IInventoryService _inventoryService;
+    private readonly IFechaHelper _fechas;
 
-    public AlexaController(AppDbContext context, ReportsService reportsService, IInventoryService inventoryService)
+    public AlexaController(AppDbContext context, ReportsService reportsService,
+        IInventoryService inventoryService, IFechaHelper fechas)
     {
         _context = context;
         _reportsService = reportsService;
         _inventoryService = inventoryService;
+        _fechas = fechas;
     }
 
     // GET /api/alexa/inventory
@@ -142,7 +145,9 @@ public class AlexaController : ControllerBase
     [HttpGet("reports/ventas-hoy")]
     public async Task<IActionResult> GetVentasHoy()
     {
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        // Hora de la tienda: si se usa UtcNow, a partir de las 18:00 locales Alexa
+        // reportaría las ventas de mañana (vacías) en vez de las del día en curso.
+        var hoy = _fechas.HoyLocal();
 
         var stats = await _context.Orders
             .Where(o => o.FechaEntrega == hoy && o.EstadoPedido != "CANCELADO" && !o.Archivado)
@@ -170,7 +175,7 @@ public class AlexaController : ControllerBase
     [HttpGet("orders/pendientes")]
     public async Task<IActionResult> GetPedidosPendientesHoy()
     {
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var hoy = _fechas.HoyLocal();
         var pendientes = await _context.Orders
             .Where(o => o.FechaEntrega == hoy &&
                         !o.Archivado &&

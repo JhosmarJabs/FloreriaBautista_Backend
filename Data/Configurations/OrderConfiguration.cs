@@ -45,5 +45,15 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
                .WithOne(d => d.Order)
                .HasForeignKey<Delivery>(d => d.OrderId)
                .OnDelete(DeleteBehavior.Cascade);
+
+        // Dar de baja a un empleado no debe borrar ni bloquear sus pedidos:
+        // el histórico se conserva y la atribución simplemente queda vacía.
+        builder.HasOne(o => o.AtendidoPor)
+               .WithMany()
+               .HasForeignKey(o => o.AtendidoPorUsuarioId)
+               .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasIndex(o => o.AtendidoPorUsuarioId)
+               .HasFilter("atendido_por_usuario_id IS NOT NULL");
     }
 }

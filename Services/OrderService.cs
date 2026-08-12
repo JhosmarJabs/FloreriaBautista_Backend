@@ -3,6 +3,7 @@ using FloreriaBautista.Data;
 using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Models.DTOs.Orders;
 using FloreriaBautista.Models.Entities;
+using FloreriaBautista.Models.Enums;
 using FloreriaBautista.Models.Exceptions;
 using FloreriaBautista.Services.Interfaces;
 
@@ -11,6 +12,7 @@ namespace FloreriaBautista.Services;
 public class OrderService : IOrderService
 {
     private readonly AppDbContext           _context;
+    private readonly IFechaHelper           _fechas;
     private readonly ILogger<OrderService>  _logger;
 
     // Estados válidos y sus transiciones permitidas
@@ -24,9 +26,10 @@ public class OrderService : IOrderService
         ["PENDIENTE_ANULACION"]  = ["CANCELADO", "EN_PREPARACION"]
     };
 
-    public OrderService(AppDbContext context, ILogger<OrderService> logger)
+    public OrderService(AppDbContext context, IFechaHelper fechas, ILogger<OrderService> logger)
     {
         _context = context;
+        _fechas  = fechas;
         _logger  = logger;
     }
 
@@ -197,20 +200,35 @@ public class OrderService : IOrderService
 
     // ── Admin: listar ─────────────────────────────────────────────
     public async Task<PagedResultDto<OrderSummaryDto>> ListarAdminAsync(
-        string? estado, DateOnly? desde, DateOnly? hasta, int page, int size, bool archivado = false)
+        string? estado, DateOnly? desde, DateOnly? hasta, int page, int size,
+        bool archivado = false, bool requierenCierre = false)
     {
+        // "Hoy" en hora de la tienda, nunca en UTC: la florería está en UTC-6 y a
+        // partir de las 18:00 locales el día UTC ya es el siguiente, lo que hacía
+        // desaparecer de la vista los pedidos que se entregan hoy mismo.
+        var hoy = _fechas.HoyLocal();
+
         var query = _context.Orders
             .Include(o => o.Customer)
-            .Where(o => o.Archivado == archivado)
             .AsQueryable();
 
-        // La vista activa (no archivada) solo muestra pedidos de hoy en adelante.
-        // Los atrasados los mueve OrderArchiverService al archivo; este filtro evita
-        // que se sigan viendo mientras esa revisión (cada hora) todavía no corre.
-        if (!archivado)
+        if (requierenCierre)
         {
-            var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
-            query = query.Where(o => o.FechaEntrega >= hoy);
+            // Vista "requieren cierre": pedidos ya archivados que conservaron un
+            // estado en curso (EN_RUTA) porque su fecha de entrega pasó mientras el
+            // repartidor seguía en la calle. Sí ocurrieron, pero nadie los cerró.
+            query = query.Where(o => o.Archivado && !EstadosPedido.Cerrados.Contains(o.EstadoPedido));
+        }
+        else
+        {
+            query = query.Where(o => o.Archivado == archivado);
+
+            // RED DE SEGURIDAD DOBLE — no borrar este filtro pensando que sobra:
+            // la vista activa solo muestra pedidos de hoy en adelante. Los atrasados
+            // los mueve OrderArchiver, pero solo revisa cada hora; sin este filtro un
+            // pedido vencido seguiría visible hasta 60 min. Ver OrderArchiverService.
+            if (!archivado)
+                query = query.Where(o => o.FechaEntrega >= hoy);
         }
 
         if (!string.IsNullOrWhiteSpace(estado))
@@ -220,7 +238,16 @@ public class OrderService : IOrderService
         if (hasta.HasValue)
             query = query.Where(o => o.FechaEntrega <= hasta.Value);
 
-        return await PaginarAsync(query.OrderByDescending(o => o.FechaCreacion), page, size);
+        var resultado = await PaginarAsync(query.OrderByDescending(o => o.FechaCreacion), page, size);
+
+        // Un rango de fechas que cae (aunque sea en parte) antes de hoy choca con el
+        // filtro duro de la vista activa: el usuario pide "del 1 al 5 del mes pasado"
+        // y no sale nada. En vez de reinterpretar la consulta en silencio, se avisa
+        // con esta bandera para que el frontend ofrezca "ver en el archivo".
+        resultado.RangoFueraDeVistaActiva = !archivado && !requierenCierre &&
+            ((desde.HasValue && desde.Value < hoy) || (hasta.HasValue && hasta.Value < hoy));
+
+        return resultado;
     }
 
     // ── Admin: detalle ────────────────────────────────────────────

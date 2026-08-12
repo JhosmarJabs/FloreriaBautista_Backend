@@ -25,7 +25,15 @@ public class Order
     public bool     Archivado                    { get; set; } = false;
     public DateTime? ArchivadoEn                 { get; set; }
 
+    // Empleado que atendió el pedido: quien lo capturó (venta física) o quien lo
+    // validó (pedido web/telefónico). Es la única atribución de pedido → persona
+    // que existe; sin ella el reporte de desempeño de empleado no se puede armar.
+    // Null en los pedidos anteriores a la migración y en los creados por el propio
+    // cliente desde la web sin que nadie los haya validado todavía.
+    public Guid?    AtendidoPorUsuarioId         { get; set; }
+
     public Customer              Customer   { get; set; } = null!;
+    public User?                 AtendidoPor { get; set; }
     public ICollection<OrderItem> OrderItems { get; set; } = [];
     public ICollection<Payment>  Payments   { get; set; } = [];
     public Delivery?             Delivery   { get; set; }

@@ -17,6 +17,7 @@ public class InventoryService : IInventoryService
     private readonly ILogger<InventoryService> _logger;
     private readonly IMlPredictionClient       _mlClient;
     private readonly IMemoryCache              _cache;
+    private readonly IFechaHelper              _fechas;
 
     private static readonly Regex _nonAlphaNumRegex = new(@"[^a-z0-9\s]", RegexOptions.Compiled);
 
@@ -26,12 +27,14 @@ public class InventoryService : IInventoryService
     private static readonly TimeSpan TtlReabastecimiento = TimeSpan.FromHours(6);
 
     public InventoryService(AppDbContext context, ILogger<InventoryService> logger,
-                            IMlPredictionClient mlClient, IMemoryCache cache)
+                            IMlPredictionClient mlClient, IMemoryCache cache,
+                            IFechaHelper fechas)
     {
         _context  = context;
         _logger   = logger;
         _mlClient = mlClient;
         _cache    = cache;
+        _fechas   = fechas;
     }
 
     // ── Listar ────────────────────────────────────────────────────
@@ -264,7 +267,7 @@ public class InventoryService : IInventoryService
     // ── Historial y Predicción ────────────────────────────────────
     public async Task RegistrarSnapshotDiarioAsync()
     {
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var hoy = _fechas.HoyLocal();
 
         var existe = await _context.InventoryDailySnapshots.AnyAsync(s => s.Fecha == hoy);
         if (existe) {
@@ -272,8 +275,9 @@ public class InventoryService : IInventoryService
             return;
         }
 
-        var inicioDia = hoy.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-        var finDia    = hoy.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc);
+        // El día local de la tienda, expresado en el UTC con que se guardan las fechas.
+        var inicioDia = _fechas.InicioDelDiaUtc(hoy);
+        var finDia    = _fechas.InicioDelDiaUtc(hoy.AddDays(1)).AddTicks(-1);
 
         // Un solo JOIN: obtiene stock actual + totales de movimientos del día por item
         var datos = await _context.InventoryItems
@@ -651,7 +655,7 @@ public class InventoryService : IInventoryService
     // aparecen en el resultado nunca se vendieron en ese periodo (consumo implícito = 0).
     public async Task<Dictionary<Guid, int>> ObtenerConsumoRecienteAsync(int dias = 30)
     {
-        var desde = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-dias);
+        var desde = _fechas.HoyLocal().AddDays(-dias);
 
         return await _context.OrderItems
             .Include(oi => oi.Order)

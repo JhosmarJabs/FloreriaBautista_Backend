@@ -42,6 +42,8 @@ public class AppDbContext : DbContext
     public DbSet<InventoryMovement>      InventoryMovements       => Set<InventoryMovement>();
     public DbSet<InventoryDailySnapshot> InventoryDailySnapshots  => Set<InventoryDailySnapshot>();
     public DbSet<ProductRecipe>          ProductRecipes           => Set<ProductRecipe>();
+    public DbSet<SupplyOrder>            SupplyOrders             => Set<SupplyOrder>();
+    public DbSet<SupplyOrderItem>        SupplyOrderItems         => Set<SupplyOrderItem>();
 
     // ── Operación técnica ──────────────────────────────────────────
     public DbSet<BackupJob>         BackupJobs         => Set<BackupJob>();
@@ -49,6 +51,10 @@ public class AppDbContext : DbContext
     public DbSet<AuditLog>          AuditLogs          => Set<AuditLog>();
     public DbSet<SchedulerSettings> SchedulerSettings  => Set<SchedulerSettings>();
     public DbSet<SiteSettings>      SiteSettings       => Set<SiteSettings>();
+
+    // ── Analítica web ──────────────────────────────────────────────
+    public DbSet<PageVisit>      PageVisits      => Set<PageVisit>();
+    public DbSet<PageVisitDaily> PageVisitsDaily => Set<PageVisitDaily>();
 
     // ── Modelos predictivos ─────────────────────────────────────────
     public DbSet<AssociationRule>  AssociationRules  => Set<AssociationRule>();

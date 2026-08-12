@@ -16,11 +16,14 @@ public class CustomerSegmentationService : ICustomerSegmentationService
     private const int K = 4;
 
     private readonly AppDbContext                          _context;
+    private readonly IFechaHelper                          _fechas;
     private readonly ILogger<CustomerSegmentationService>  _logger;
 
-    public CustomerSegmentationService(AppDbContext context, ILogger<CustomerSegmentationService> logger)
+    public CustomerSegmentationService(AppDbContext context, IFechaHelper fechas,
+        ILogger<CustomerSegmentationService> logger)
     {
         _context = context;
+        _fechas  = fechas;
         _logger  = logger;
     }
 
@@ -33,7 +36,9 @@ public class CustomerSegmentationService : ICustomerSegmentationService
 
     public async Task<RecalcularSegmentosResultDto> RecalcularSegmentosAsync()
     {
-        var hoy = DateTime.UtcNow.Date;
+        // Día de la tienda (ver IFechaHelper): recencia y edad se miden contra el
+        // calendario local, no contra el UTC.
+        var hoy = _fechas.AhoraLocal().Date;
 
         var crudo = await _context.Customers
             .Select(c => new

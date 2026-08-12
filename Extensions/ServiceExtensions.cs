@@ -76,10 +76,18 @@ public static class ServiceExtensions
         services.AddScoped<IDatabaseMaintenanceService, DatabaseMaintenanceService>();
         services.AddScoped<IRestoreService,             RestoreService>();
 
+        // ── Fecha/hora del negocio ─────────────────────────────────
+        // Singleton: la zona horaria se resuelve una sola vez. Cualquier "hoy" del
+        // backend debe salir de aquí (ver IFechaHelper).
+        services.AddSingleton<IFechaHelper, FechaHelper>();
+
         // ── Tareas programadas (background) ───────────────────────
         // Registrar como singleton para poder inyectarlo en el controller
         services.AddSingleton<BackupSchedulerService>();
         services.AddHostedService(sp => sp.GetRequiredService<BackupSchedulerService>());
+        // El archivador de pedidos: la regla es scoped (la usan el scheduler y el
+        // endpoint manual), el hosted service solo la dispara cada hora.
+        services.AddScoped<IOrderArchiver, OrderArchiver>();
         services.AddHostedService<OrderArchiverService>();
         services.AddHostedService<PredictiveModelsSchedulerService>();
 
@@ -93,7 +101,12 @@ public static class ServiceExtensions
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<IOrderService, OrderService>();
         services.AddScoped<IInventoryService, InventoryService>();
+        services.AddScoped<ISupplyOrderService, SupplyOrderService>();
         services.AddScoped<ReportsService>();
+        // Reportes por dominio (rediseño Agente 5): cada uno consulta su fuente real.
+        services.AddScoped<Services.Reports.InventoryReportsService>();
+        services.AddScoped<Services.Reports.SalesReportsService>();
+        services.AddScoped<Services.Reports.PeopleReportsService>();
         services.AddScoped<CmsService>();
 
         // ── Modelos predictivos ─────────────────────────────────────

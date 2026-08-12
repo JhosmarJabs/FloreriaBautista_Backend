@@ -1,17 +1,20 @@
 using Microsoft.EntityFrameworkCore;
 using FloreriaBautista.Data;
 using FloreriaBautista.Models.DTOs.Reports;
+using FloreriaBautista.Services.Interfaces;
 
 namespace FloreriaBautista.Services.Reports;
 
 public class ReportsService
 {
     private readonly AppDbContext             _context;
+    private readonly IFechaHelper             _fechas;
     private readonly ILogger<ReportsService>  _logger;
 
-    public ReportsService(AppDbContext context, ILogger<ReportsService> logger)
+    public ReportsService(AppDbContext context, IFechaHelper fechas, ILogger<ReportsService> logger)
     {
         _context = context;
+        _fechas  = fechas;
         _logger  = logger;
     }
 
@@ -134,7 +137,9 @@ public class ReportsService
     // ── Dashboard ─────────────────────────────────────────────────
     public async Task<DashboardStatsDto> ObtenerDashboardStatsAsync(string periodo = "mes")
     {
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        // Zona horaria del negocio: la resuelve IFechaHelper (Store:TimeZone), que es
+        // el único "hoy" del backend. Antes aquí había un offset fijo de -6 horas.
+        var hoy = _fechas.HoyLocal();
 
         // Rango según el periodo que envía Alexa (dia / semana / mes)
         var dias = periodo switch
@@ -145,9 +150,16 @@ public class ReportsService
         };
         var desde = hoy.AddDays(-(dias - 1)); // incluye hoy
 
-        // 1. Pedidos del periodo
+        // Rango [desde 00:00, hoy+1 00:00) en hora local, convertido a UTC para
+        // comparar contra FechaCreacion (almacenada en UTC).
+        var desdeUtc = _fechas.InicioDelDiaUtc(desde);
+        var hastaUtc = _fechas.InicioDelDiaUtc(hoy.AddDays(1));
+
+        // 1. Pedidos del periodo — por fecha REAL de venta (creación), no por la
+        //    fecha de entrega futura (un pedido creado hoy para entregar en 2
+        //    semanas es una venta de HOY, no de dentro de 2 semanas).
         var pedidos = await _context.Orders
-            .Where(o => o.FechaEntrega >= desde && o.FechaEntrega <= hoy && o.EstadoPedido != "CANCELADO")
+            .Where(o => o.FechaCreacion >= desdeUtc && o.FechaCreacion < hastaUtc && o.EstadoPedido != "CANCELADO")
             .ToListAsync();
 
         var totalSales  = pedidos.Sum(o => o.Total);
@@ -155,24 +167,29 @@ public class ReportsService
         var avgTicket   = orderCount > 0 ? totalSales / orderCount : 0;
 
         // 2. Nuevos clientes en el mismo periodo
-        // Npgsql exige Kind=Utc para columnas "timestamp with time zone"
-        var desdeDateTime = DateTime.SpecifyKind(desde.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
         var newCustomers = await _context.Users
-            .Where(u => u.CreadoEn >= desdeDateTime)
+            .Where(u => u.CreadoEn >= desdeUtc)
             .CountAsync();
 
-        // 3. Ventas por día del periodo (para la gráfica)
-        var ventasPorDia = await _context.Orders
-            .Where(o => o.FechaEntrega >= desde && o.FechaEntrega <= hoy && o.EstadoPedido != "CANCELADO")
-            .GroupBy(o => o.FechaEntrega)
-            .Select(g => new DailySaleDto
+        // 3. Ventas por día del periodo (para la gráfica) — agrupadas por fecha
+        //    LOCAL real de creación, completando con $0 los días sin ventas para
+        //    que el eje de fechas sea un calendario continuo y no aproximado.
+        var ventasPorDiaReales = pedidos
+            .GroupBy(o => DateOnly.FromDateTime(_fechas.ALocal(o.FechaCreacion)))
+            .ToDictionary(g => g.Key, g => new DailySaleDto
             {
                 Fecha   = g.Key,
                 Pedidos = g.Count(),
                 Total   = g.Sum(o => o.Total)
-            })
-            .OrderBy(d => d.Fecha)
-            .ToListAsync();
+            });
+
+        var ventasPorDia = new List<DailySaleDto>();
+        for (var d = desde; d <= hoy; d = d.AddDays(1))
+        {
+            ventasPorDia.Add(ventasPorDiaReales.TryGetValue(d, out var existente)
+                ? existente
+                : new DailySaleDto { Fecha = d, Pedidos = 0, Total = 0 });
+        }
 
         // 4. Inventario crítico
         var criticalInventory = await _context.InventoryItems

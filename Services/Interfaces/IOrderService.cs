@@ -11,6 +11,6 @@ public interface IOrderService
     Task<OrderResponseDto>               ObtenerMiPedidoAsync(Guid userId, Guid orderId);
     Task<OrderResponseDto>               CambiarEstadoAsync(Guid orderId, UpdateOrderStatusRequestDto request, List<string> rolesUsuario);
     Task<OrderResponseDto>               RegistrarPagoAsync(Guid orderId, RegisterPaymentRequestDto request);
-    Task<PagedResultDto<OrderSummaryDto>> ListarAdminAsync(string? estado, DateOnly? desde, DateOnly? hasta, int page, int size, bool archivado = false);
+    Task<PagedResultDto<OrderSummaryDto>> ListarAdminAsync(string? estado, DateOnly? desde, DateOnly? hasta, int page, int size, bool archivado = false, bool requierenCierre = false);
     Task<OrderResponseDto>               ObtenerAdminAsync(Guid orderId);
 }

@@ -1,18 +1,26 @@
-using FloreriaBautista.Data;
-using Microsoft.EntityFrameworkCore;
+using FloreriaBautista.Services.Interfaces;
 
 namespace FloreriaBautista.Services.Scheduler;
 
 /// <summary>
-/// Revisa periódicamente los pedidos cuya fecha de entrega ya pasó y no fueron
-/// archivados. Si su estado ya es uno "final" (entregado o cancelado), solo se
-/// mueve al archivo. Si nadie le dio seguimiento, se marca como "NO_COMPLETADO"
-/// antes de archivarlo, para que no ensucie visualmente los pedidos del día.
+/// Dispara la regla de archivo (<see cref="OrderArchiver"/>) cada hora, y una
+/// primera vez en cuanto arranca el backend — la pasada inicial ocurre ANTES del
+/// primer <c>Task.Delay</c>, así que un reinicio siempre deja la vista limpia sin
+/// esperar la siguiente ventana.
+///
+/// RED DE SEGURIDAD DOBLE — no borrar ninguna de las dos mitades:
+/// esta ventana de 1 hora significa que un pedido atrasado puede seguir en la
+/// tabla hasta 60 minutos después de vencer. Por eso
+/// <c>OrderService.ListarAdminAsync</c> filtra además por
+/// <c>FechaEntrega &gt;= hoy</c> en la vista activa. Ese filtro NO es redundante:
+/// es lo que hace que el usuario nunca vea un pedido vencido, aunque el
+/// archivador todavía no haya corrido. Y este servicio tampoco es redundante: es
+/// lo que persiste <c>Archivado</c> y el estado NO_COMPLETADO.
 /// </summary>
 public class OrderArchiverService : BackgroundService
 {
-    private static readonly string[] EstadosFinales = ["ENTREGADO", "ENTREGADA", "CANCELADO", "CANCELADA"];
     private static readonly TimeSpan IntervaloRevision = TimeSpan.FromHours(1);
+    private static readonly TimeSpan IntervaloReintento = TimeSpan.FromMinutes(5);
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<OrderArchiverService> _logger;
@@ -25,54 +33,42 @@ public class OrderArchiverService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("OrderArchiverService iniciado. Revisión cada {Horas}h.", IntervaloRevision.TotalHours);
+        _logger.LogInformation("OrderArchiverService iniciado. Revisión cada {Horas}h (la primera, ahora).",
+            IntervaloRevision.TotalHours);
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            await ArchivarPedidosAtrasadosAsync();
-            await Task.Delay(IntervaloRevision, stoppingToken);
+            var ok = await EjecutarPasadaAsync();
+
+            try
+            {
+                // Si la pasada falló (p. ej. la base todavía no acepta conexiones
+                // recién arrancado el contenedor) se reintenta pronto, no en 1 hora.
+                await Task.Delay(ok ? IntervaloRevision : IntervaloReintento, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
 
         _logger.LogInformation("OrderArchiverService detenido.");
     }
 
-    private async Task ArchivarPedidosAtrasadosAsync()
+    private async Task<bool> EjecutarPasadaAsync()
     {
-        using var scope   = _scopeFactory.CreateScope();
-        var       context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
         try
         {
-            var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
-
-            var atrasados = await context.Orders
-                .Where(o => !o.Archivado && o.FechaEntrega < hoy)
-                .ToListAsync();
-
-            if (atrasados.Count == 0) return;
-
-            var noCompletados = 0;
-            foreach (var pedido in atrasados)
-            {
-                if (!EstadosFinales.Contains(pedido.EstadoPedido.ToUpper()))
-                {
-                    pedido.EstadoPedido = "NO_COMPLETADO";
-                    noCompletados++;
-                }
-
-                pedido.Archivado   = true;
-                pedido.ArchivadoEn = DateTime.UtcNow;
-            }
-
-            await context.SaveChangesAsync();
-
-            _logger.LogInformation(
-                "Archivado automático: {Total} pedido(s) atrasado(s) movidos al archivo ({NoCompletados} marcados como NO_COMPLETADO).",
-                atrasados.Count, noCompletados);
+            using var scope = _scopeFactory.CreateScope();
+            var archiver    = scope.ServiceProvider.GetRequiredService<IOrderArchiver>();
+            await archiver.ArchivarAtrasadosAsync();
+            return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error al archivar pedidos atrasados");
+            _logger.LogError(ex, "Error al archivar pedidos atrasados; se reintentará en {Minutos} min.",
+                IntervaloReintento.TotalMinutes);
+            return false;
         }
     }
 }

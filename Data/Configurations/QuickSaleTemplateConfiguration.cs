@@ -15,6 +15,7 @@ public class QuickSaleTemplateConfiguration : IEntityTypeConfiguration<QuickSale
         builder.Property(t => t.Descripcion).HasMaxLength(255);
         builder.Property(t => t.Icono).HasMaxLength(30).HasDefaultValue("Sparkles");
         builder.Property(t => t.Orden).HasDefaultValue(0);
+        builder.Property(t => t.Activa).HasDefaultValue(true);
         builder.Property(t => t.CreadoEn).HasDefaultValueSql("NOW()");
         builder.Property(t => t.ActualizadoEn).HasDefaultValueSql("NOW()");
     }

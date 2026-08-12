@@ -20,20 +20,28 @@ public class QuickSaleTemplatesController : ControllerBase
     private readonly AppDbContext _context;
     public QuickSaleTemplatesController(AppDbContext context) => _context = context;
 
-    // GET /api/quick-sale-templates
+    // GET /api/quick-sale-templates?soloActivas=true
+    // El POS pasa soloActivas=true (solo plantillas publicadas); el editor del
+    // admin las lista todas, incluidos los borradores (Activa = false).
     [HttpGet]
-    public async Task<IActionResult> Listar()
+    public async Task<IActionResult> Listar([FromQuery] bool soloActivas = false)
     {
-        var templates = await _context.QuickSaleTemplates
+        var query = _context.QuickSaleTemplates
             .Include(t => t.Items).ThenInclude(i => i.Product)
+            .AsQueryable();
+
+        if (soloActivas) query = query.Where(t => t.Activa);
+
+        var templates = await query
             .OrderBy(t => t.Orden).ThenBy(t => t.CreadoEn)
             .ToListAsync();
 
         return Ok(ApiResponseDto<List<QuickSaleTemplateDto>>.Ok(templates.Select(MapToDto).ToList()));
     }
 
-    // POST /api/quick-sale-templates (Crear)
+    // POST /api/quick-sale-templates (Crear) — solo el admin diseña plantillas.
     [HttpPost]
+    [Authorize(Roles = "ADMIN")]
     public async Task<IActionResult> Crear([FromBody] SaveQuickSaleTemplateRequestDto request)
     {
         var error = Validar(request);
@@ -52,6 +60,7 @@ public class QuickSaleTemplatesController : ControllerBase
             Descripcion   = string.IsNullOrWhiteSpace(request.Descripcion) ? null : request.Descripcion.Trim(),
             Icono         = string.IsNullOrWhiteSpace(request.Icono) ? "Sparkles" : request.Icono,
             Orden         = request.Orden,
+            Activa        = request.Activa,
             CreadoEn      = DateTime.UtcNow,
             ActualizadoEn = DateTime.UtcNow,
         };
@@ -63,6 +72,7 @@ public class QuickSaleTemplatesController : ControllerBase
             ProductId           = i.ProductId,
             Icono               = string.IsNullOrWhiteSpace(i.Icono) ? "Sparkles" : i.Icono,
             Color               = string.IsNullOrWhiteSpace(i.Color) ? "blue" : i.Color,
+            CantidadPreset      = i.Cantidad < 1 ? 1 : i.Cantidad,
             Orden               = idx,
         }).ToList();
 
@@ -75,8 +85,9 @@ public class QuickSaleTemplatesController : ControllerBase
         return Ok(ApiResponseDto<QuickSaleTemplateDto>.Ok(MapToDto(template), "Plantilla creada correctamente."));
     }
 
-    // POST /api/quick-sale-templates/{id} (Actualizar)
+    // POST /api/quick-sale-templates/{id} (Actualizar) — solo el admin.
     [HttpPost("{id:guid}")]
+    [Authorize(Roles = "ADMIN")]
     public async Task<IActionResult> Actualizar(Guid id, [FromBody] SaveQuickSaleTemplateRequestDto request)
     {
         var template = await _context.QuickSaleTemplates
@@ -97,6 +108,7 @@ public class QuickSaleTemplatesController : ControllerBase
         template.Descripcion   = string.IsNullOrWhiteSpace(request.Descripcion) ? null : request.Descripcion.Trim();
         template.Icono         = string.IsNullOrWhiteSpace(request.Icono) ? "Sparkles" : request.Icono;
         template.Orden         = request.Orden;
+        template.Activa        = request.Activa;
         template.ActualizadoEn = DateTime.UtcNow;
 
         // Reemplaza todos los items: es más simple y confiable que hacer diff,
@@ -109,6 +121,7 @@ public class QuickSaleTemplatesController : ControllerBase
             ProductId           = i.ProductId,
             Icono               = string.IsNullOrWhiteSpace(i.Icono) ? "Sparkles" : i.Icono,
             Color               = string.IsNullOrWhiteSpace(i.Color) ? "blue" : i.Color,
+            CantidadPreset      = i.Cantidad < 1 ? 1 : i.Cantidad,
             Orden               = idx,
         }).ToList();
 
@@ -119,8 +132,9 @@ public class QuickSaleTemplatesController : ControllerBase
         return Ok(ApiResponseDto<QuickSaleTemplateDto>.Ok(MapToDto(template), "Plantilla actualizada correctamente."));
     }
 
-    // POST /api/quick-sale-templates/{id}/eliminar
+    // POST /api/quick-sale-templates/{id}/eliminar — solo el admin.
     [HttpPost("{id:guid}/eliminar")]
+    [Authorize(Roles = "ADMIN")]
     public async Task<IActionResult> Eliminar(Guid id)
     {
         var template = await _context.QuickSaleTemplates.FindAsync(id);
@@ -146,6 +160,7 @@ public class QuickSaleTemplatesController : ControllerBase
         Descripcion = t.Descripcion,
         Icono       = t.Icono,
         Orden       = t.Orden,
+        Activa      = t.Activa,
         Items = t.Items
             .OrderBy(i => i.Orden)
             .Select(i => new QuickSaleTemplateItemDto
@@ -156,6 +171,7 @@ public class QuickSaleTemplatesController : ControllerBase
                 Precio    = i.Product.PrecioBase,
                 Icono     = i.Icono,
                 Color     = i.Color,
+                Cantidad  = i.CantidadPreset,
             }).ToList()
     };
 }

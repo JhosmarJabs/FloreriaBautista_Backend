@@ -14,6 +14,7 @@ public class QuickSaleTemplateItemConfiguration : IEntityTypeConfiguration<Quick
         builder.Property(i => i.Icono).HasMaxLength(30).HasDefaultValue("Sparkles");
         builder.Property(i => i.Color).HasMaxLength(30).HasDefaultValue("blue");
         builder.Property(i => i.Orden).HasDefaultValue(0);
+        builder.Property(i => i.CantidadPreset).HasDefaultValue(1);
 
         builder.HasOne(i => i.Template)
                .WithMany(t => t.Items)
