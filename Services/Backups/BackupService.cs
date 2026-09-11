@@ -327,7 +327,7 @@ public class BackupService : IBackupService
         var user     = Environment.GetEnvironmentVariable("BACKUP_DB_USER") ?? GetAdminUser();
         var password = Environment.GetEnvironmentVariable("BACKUP_DB_PASSWORD") ?? GetAdminPassword();
         return new NpgsqlConnection(
-            $"Host={host};Port={port};Database={database};Username={user};Password={password};Search Path=public");
+            $"Host={host};Port={port};Database={database};Username={user};Password={password};Search Path=public;SSL Mode=Require");
     }
 
     private static string GenerarNombreArchivo(string tipo, string? tabla, string formato)

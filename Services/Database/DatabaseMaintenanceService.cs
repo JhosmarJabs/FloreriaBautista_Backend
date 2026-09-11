@@ -205,14 +205,14 @@ public class DatabaseMaintenanceService : IDatabaseMaintenanceService
     private static NpgsqlConnection CrearConexionApp()
     {
         var cs = $"Host={Env("DB_HOST")};Port={Env("DB_PORT")};Database={Env("DB_NAME")};" +
-                 $"Username={GetAdminUser()};Password={GetAdminPassword()};Search Path=public";
+                 $"Username={GetAdminUser()};Password={GetAdminPassword()};Search Path=public;SSL Mode=Require";
         return new NpgsqlConnection(cs);
     }
 
     private static NpgsqlConnection CrearConexionAdmin()
     {
         var cs = $"Host={Env("DB_HOST")};Port={Env("DB_PORT")};Database={Env("DB_NAME")};" +
-                 $"Username={GetAdminUser()};Password={GetAdminPassword()};Search Path=public";
+                 $"Username={GetAdminUser()};Password={GetAdminPassword()};Search Path=public;SSL Mode=Require";
         return new NpgsqlConnection(cs);
     }
 

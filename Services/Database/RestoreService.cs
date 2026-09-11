@@ -198,7 +198,7 @@ public class RestoreService : IRestoreService
         var password = Env("DB_ADMIN_PASSWORD");
 
         var resultado      = new Dictionary<string, int>();
-        var connStrRestore = $"host={host} port={port} dbname={dbRestore} user={user} password={password}";
+        var connStrRestore = $"host={host} port={port} dbname={dbRestore} user={user} password={password} sslmode=require";
 
         await using var conn = CrearConexionOriginal();
         await conn.OpenAsync();
@@ -363,7 +363,7 @@ public class RestoreService : IRestoreService
         var user     = Env("DB_ADMIN_USER");
         var password = Env("DB_ADMIN_PASSWORD");
         return new NpgsqlConnection(
-            $"Host={host};Port={port};Database=postgres;Username={user};Password={password}");
+            $"Host={host};Port={port};Database=postgres;Username={user};Password={password};SSL Mode=Require");
     }
 
     /// <summary>Conecta a la BD original de la aplicación.</summary>
@@ -375,7 +375,7 @@ public class RestoreService : IRestoreService
         var user     = Env("DB_ADMIN_USER");
         var password = Env("DB_ADMIN_PASSWORD");
         return new NpgsqlConnection(
-            $"Host={host};Port={port};Database={database};Username={user};Password={password}");
+            $"Host={host};Port={port};Database={database};Username={user};Password={password};SSL Mode=Require");
     }
 
     private static string Env(string key) =>

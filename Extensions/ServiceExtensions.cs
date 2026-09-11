@@ -134,7 +134,7 @@ public static class ServiceExtensions
         $"Database={Env("DB_NAME")};" +
         $"Username={GetAdminUser()};" +
         $"Password={GetAdminPassword()};" +
-        "Search Path=public;Include Error Detail=true";
+        "Search Path=public;Include Error Detail=true;SSL Mode=Require";
 
     private static string GetAdminUser()
     {

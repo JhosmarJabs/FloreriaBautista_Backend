@@ -47,14 +47,16 @@ public class AppDbContextFactory
         $"Port={Env("DB_PORT")};"      +
         $"Database={Env("DB_NAME")};"  +
         $"Username={GetAdminUser()};"     +
-        $"Password={GetAdminPassword()}";
+        $"Password={GetAdminPassword()};" +
+        "SSL Mode=Require";
 
     private static string BuildAppConnection() =>
         $"Host={Env("DB_HOST")};"      +
         $"Port={Env("DB_PORT")};"      +
         $"Database={Env("DB_NAME")};"  +
         $"Username={GetAdminUser()};"  +
-        $"Password={GetAdminPassword()}";
+        $"Password={GetAdminPassword()};" +
+        "SSL Mode=Require";
 
     private static string GetAdminUser()
     {
