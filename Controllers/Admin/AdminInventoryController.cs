@@ -23,6 +23,22 @@ public class AdminInventoryController : ControllerBase
         return Ok(ApiResponseDto<InventoryKpisDto>.Ok(kpis));
     }
 
+    // GET /api/admin/inventory/index — lectura completa para el front en memoria
+    [HttpGet("index")]
+    public async Task<IActionResult> Indice()
+    {
+        var resultado = await _inventoryService.ListarIndiceAsync();
+        return Ok(ApiResponseDto<IndexResultDto<InventoryIndexDto>>.Ok(resultado));
+    }
+
+    // GET /api/admin/inventory/delta?desde=<ISO-8601> — solo lo cambiado
+    [HttpGet("delta")]
+    public async Task<IActionResult> Delta([FromQuery] DateTime desde)
+    {
+        var resultado = await _inventoryService.ListarDeltaAsync(desde);
+        return Ok(ApiResponseDto<IndexResultDto<InventoryIndexDto>>.Ok(resultado));
+    }
+
     // GET /api/admin/inventory?sucursal=PRINCIPAL&bajoMinimo=true&busqueda=rosa
     [HttpGet]
     public async Task<IActionResult> Listar(

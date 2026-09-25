@@ -33,6 +33,8 @@ public class ExceptionMiddleware
         {
             NotFoundException     => (HttpStatusCode.NotFound,           ex.Message),
             UnauthorizedException => (HttpStatusCode.Unauthorized,       ex.Message),
+            ForbiddenException    => (HttpStatusCode.Forbidden,          ex.Message),
+            ConflictException     => (HttpStatusCode.Conflict,           ex.Message),
             AppException          => (HttpStatusCode.BadRequest,         ex.Message),
             _ => (HttpStatusCode.InternalServerError,
                   isDev

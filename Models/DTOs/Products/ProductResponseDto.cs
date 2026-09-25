@@ -12,6 +12,9 @@ public class ProductResponseDto
     public string       Visibilidad      { get; set; } = string.Empty;
     public string?      ImagenUrl        { get; set; }
     public bool         Activo           { get; set; }
+    public bool         EsReal           { get; set; }
+    public bool         PermiteVentaInstantanea { get; set; }
+    public int?         LimiteVentaInstantanea  { get; set; }
     public List<string> Categorias       { get; set; } = [];
     public List<string> Catalogos       { get; set; } = [];
     public List<RecipeItemDto> Receta    { get; set; } = [];

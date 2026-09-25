@@ -8,6 +8,7 @@ using FloreriaBautista.Models.DTOs.Inventory;
 using FloreriaBautista.Models.Entities;
 using FloreriaBautista.Models.Exceptions;
 using FloreriaBautista.Services.Interfaces;
+using FloreriaBautista.Services.Notifications;
 
 namespace FloreriaBautista.Services;
 
@@ -18,6 +19,7 @@ public class InventoryService : IInventoryService
     private readonly IMlPredictionClient       _mlClient;
     private readonly IMemoryCache              _cache;
     private readonly IFechaHelper              _fechas;
+    private readonly INotificationService      _notificaciones;
 
     private static readonly Regex _nonAlphaNumRegex = new(@"[^a-z0-9\s]", RegexOptions.Compiled);
 
@@ -28,13 +30,14 @@ public class InventoryService : IInventoryService
 
     public InventoryService(AppDbContext context, ILogger<InventoryService> logger,
                             IMlPredictionClient mlClient, IMemoryCache cache,
-                            IFechaHelper fechas)
+                            IFechaHelper fechas, INotificationService notificaciones)
     {
-        _context  = context;
-        _logger   = logger;
-        _mlClient = mlClient;
-        _cache    = cache;
-        _fechas   = fechas;
+        _context        = context;
+        _logger         = logger;
+        _mlClient       = mlClient;
+        _cache          = cache;
+        _fechas         = fechas;
+        _notificaciones = notificaciones;
     }
 
     // ── Listar ────────────────────────────────────────────────────
@@ -82,7 +85,12 @@ public class InventoryService : IInventoryService
                 PrecioCosto  = i.PrecioCosto,
                 EsFlorPrimaria = i.EsFlorPrimaria,
                 ImagenUrl    = i.ImagenUrl,
-                Activo       = i.Activo
+                Activo       = i.Activo,
+                RendimientoEsperado = i.RendimientoEsperado,
+                FactorMermaUso      = i.FactorMermaUso,
+                PrecioUnidadCompra  = i.PrecioUnidadCompra,
+                UnidadCompra        = i.UnidadCompra,
+                VidaUtilDias        = i.VidaUtilDias
             })
             .ToListAsync();
 
@@ -93,6 +101,78 @@ public class InventoryService : IInventoryService
             Pagina       = page,
             TamanoPagina = size,
             TotalPaginas = (int)Math.Ceiling(total / (double)size)
+        };
+    }
+
+    // ── Índice completo (CQRS lectura) ─────────────────────────────
+    public async Task<IndexResultDto<InventoryIndexDto>> ListarIndiceAsync()
+    {
+        var ahora = DateTime.UtcNow;
+        var items = await _context.InventoryItems
+            .Where(i => i.Activo)
+            .OrderBy(i => i.Nombre)
+            .Select(i => new InventoryIndexDto
+            {
+                Id                  = i.Id,
+                Nombre              = i.Nombre,
+                StockActual         = i.StockActual,
+                StockMinimo         = i.StockMinimo,
+                Sucursal            = i.Sucursal,
+                SumaAlCosto         = i.SumaAlCosto,
+                UnidadMedida        = i.UnidadMedida,
+                PrecioCosto         = i.PrecioCosto,
+                EsFlorPrimaria      = i.EsFlorPrimaria,
+                ImagenUrl           = i.ImagenUrl,
+                Activo              = i.Activo,
+                RendimientoEsperado = i.RendimientoEsperado,
+                FactorMermaUso      = i.FactorMermaUso,
+                PrecioUnidadCompra  = i.PrecioUnidadCompra,
+                UnidadCompra        = i.UnidadCompra,
+                VidaUtilDias        = i.VidaUtilDias,
+                ActualizadoEn       = i.ActualizadoEn
+            })
+            .ToListAsync();
+
+        return new IndexResultDto<InventoryIndexDto>
+        {
+            Items           = items,
+            SincronizadoEn = ahora.ToString("o")
+        };
+    }
+
+    // ── Delta incremental ────────────────────────────────────────
+    public async Task<IndexResultDto<InventoryIndexDto>> ListarDeltaAsync(DateTime desde)
+    {
+        var ahora = DateTime.UtcNow;
+        var items = await _context.InventoryItems
+            .Where(i => i.ActualizadoEn > desde)
+            .OrderBy(i => i.Nombre)
+            .Select(i => new InventoryIndexDto
+            {
+                Id                  = i.Id,
+                Nombre              = i.Nombre,
+                StockActual         = i.StockActual,
+                StockMinimo         = i.StockMinimo,
+                Sucursal            = i.Sucursal,
+                SumaAlCosto         = i.SumaAlCosto,
+                UnidadMedida        = i.UnidadMedida,
+                PrecioCosto         = i.PrecioCosto,
+                EsFlorPrimaria      = i.EsFlorPrimaria,
+                ImagenUrl           = i.ImagenUrl,
+                Activo              = i.Activo,
+                RendimientoEsperado = i.RendimientoEsperado,
+                FactorMermaUso      = i.FactorMermaUso,
+                PrecioUnidadCompra  = i.PrecioUnidadCompra,
+                UnidadCompra        = i.UnidadCompra,
+                VidaUtilDias        = i.VidaUtilDias,
+                ActualizadoEn       = i.ActualizadoEn
+            })
+            .ToListAsync();
+
+        return new IndexResultDto<InventoryIndexDto>
+        {
+            Items           = items,
+            SincronizadoEn = ahora.ToString("o")
         };
     }
 
@@ -107,6 +187,15 @@ public class InventoryService : IInventoryService
     // ── Crear ─────────────────────────────────────────────────────
     public async Task<InventoryItemDto> CrearAsync(CreateInventoryItemDto request)
     {
+        var rendimiento = request.RendimientoEsperado > 0 ? request.RendimientoEsperado : 1m;
+
+        // Si se da el precio por unidad de compra (lo que se pagó por el rollo/caja),
+        // el costo por unidad de uso se deriva del rendimiento en vez de capturarse a
+        // mano — salvo que también llegue un PrecioCosto explícito, que siempre gana.
+        var precioCosto = request.PrecioUnidadCompra is decimal pc && request.PrecioCosto == 0
+            ? Math.Round(pc / rendimiento, 4)
+            : request.PrecioCosto;
+
         var item = new InventoryItem
         {
             Id           = Guid.NewGuid(),
@@ -116,12 +205,18 @@ public class InventoryService : IInventoryService
             Sucursal     = request.Sucursal.Trim().ToUpper(),
             SumaAlCosto  = request.SumaAlCosto,
             UnidadMedida = request.UnidadMedida?.Trim().ToUpper(),
-            PrecioCosto  = request.PrecioCosto,
+            PrecioCosto  = precioCosto,
             EsFlorPrimaria = request.EsFlorPrimaria,
             ImagenUrl    = request.ImagenUrl?.Trim(),
-            Activo       = true
+            Activo       = true,
+            RendimientoEsperado = rendimiento,
+            FactorMermaUso      = Math.Clamp(request.FactorMermaUso, 0m, 0.9m),
+            PrecioUnidadCompra  = request.PrecioUnidadCompra,
+            UnidadCompra        = request.UnidadCompra?.Trim().ToUpper(),
+            VidaUtilDias        = request.VidaUtilDias is int v and > 0 ? v : null
         };
 
+        item.ActualizadoEn = DateTime.UtcNow;
         _context.InventoryItems.Add(item);
         await _context.SaveChangesAsync();
         _logger.LogInformation("InventoryItem creado: {Nombre} ({Id})", item.Nombre, item.Id);
@@ -137,11 +232,10 @@ public class InventoryService : IInventoryService
         if (!string.IsNullOrWhiteSpace(request.Nombre))      item.Nombre      = request.Nombre.Trim();
         if (request.StockActual.HasValue)                     item.StockActual = request.StockActual.Value;
         if (request.StockMinimo.HasValue)                     item.StockMinimo = request.StockMinimo.Value;
-        if (request.PrecioCosto.HasValue)                     item.PrecioCosto = request.PrecioCosto.Value;
         if (request.EsFlorPrimaria.HasValue)                 item.EsFlorPrimaria = request.EsFlorPrimaria.Value;
         if (!string.IsNullOrWhiteSpace(request.Sucursal))    item.Sucursal    = request.Sucursal.Trim().ToUpper();
         if (request.SumaAlCosto.HasValue)                     item.SumaAlCosto = request.SumaAlCosto.Value;
-        
+
         if (request.UnidadMedida != null)
             item.UnidadMedida = string.IsNullOrWhiteSpace(request.UnidadMedida)
                 ? null : request.UnidadMedida.Trim().ToUpper();
@@ -152,6 +246,29 @@ public class InventoryService : IInventoryService
 
         if (request.Activo.HasValue) item.Activo = request.Activo.Value;
 
+        if (request.RendimientoEsperado.HasValue)
+            item.RendimientoEsperado = request.RendimientoEsperado.Value > 0 ? request.RendimientoEsperado.Value : 1m;
+        if (request.FactorMermaUso.HasValue)
+            item.FactorMermaUso = Math.Clamp(request.FactorMermaUso.Value, 0m, 0.9m);
+        if (request.UnidadCompra != null)
+            item.UnidadCompra = string.IsNullOrWhiteSpace(request.UnidadCompra)
+                ? null : request.UnidadCompra.Trim().ToUpper();
+        if (request.VidaUtilDias.HasValue)
+            item.VidaUtilDias = request.VidaUtilDias.Value > 0 ? request.VidaUtilDias.Value : null;
+
+        // El costo por unidad de uso se re-deriva si cambia el precio de compra, salvo
+        // que en la misma petición también llegue un PrecioCosto explícito (ese gana
+        // siempre: se aplica después, sin condición, más abajo).
+        if (request.PrecioUnidadCompra.HasValue)
+        {
+            item.PrecioUnidadCompra = request.PrecioUnidadCompra.Value > 0 ? request.PrecioUnidadCompra.Value : null;
+            if (item.PrecioUnidadCompra.HasValue && !request.PrecioCosto.HasValue)
+                item.PrecioCosto = Math.Round(item.PrecioUnidadCompra.Value / item.RendimientoEsperado, 4);
+        }
+
+        if (request.PrecioCosto.HasValue) item.PrecioCosto = request.PrecioCosto.Value;
+
+        item.ActualizadoEn = DateTime.UtcNow;
         await _context.SaveChangesAsync();
         _logger.LogInformation("InventoryItem actualizado: {Id}", id);
         return MapToDto(item);
@@ -163,11 +280,23 @@ public class InventoryService : IInventoryService
             ?? throw new NotFoundException("InventoryItem", id);
 
         item.Activo = false;
+        item.ActualizadoEn = DateTime.UtcNow;
         await _context.SaveChangesAsync();
         _logger.LogInformation("InventoryItem desactivado (borrado lǸgico): {Id}", id);
     }
 
     // ── Registrar movimiento ──────────────────────────────────────
+    //
+    // Tres mecanismos de la propuesta de rendimiento/merma viven aquí:
+    //  1. Recepción por unidad de compra (UnidadesCompra): el empleado cuenta rollos
+    //     o cajas, no varitas ni flores; el sistema convierte con RendimientoEsperado
+    //     y, si se reportó el rendimiento real de esta recepción, lo recalibra.
+    //  2. Merma de manipulación automática: una SALIDA de consumo normal genera, sin
+    //     que el empleado haga nada extra, una segunda SALIDA categorizada MANIPULACION
+    //     con la pérdida esperada — el kardex queda honesto en vez de que el número
+    //     se desalinee en silencio.
+    //  3. Conteo físico (AJUSTE con MotivoCategoria=CONTEO_FISICO): si el conteo real
+    //     queda por debajo de lo esperado, recalibra FactorMermaUso para el insumo.
     public async Task<InventoryMovementDto> RegistrarMovimientoAsync(
         RegisterMovementRequestDto request, Guid usuarioId)
     {
@@ -178,36 +307,132 @@ public class InventoryService : IInventoryService
         if (tipo != "ENTRADA" && tipo != "SALIDA" && tipo != "AJUSTE")
             throw new AppException("Tipo de movimiento invǭlido. Use: ENTRADA, SALIDA o AJUSTE.");
 
+        var categoria = NormalizarCategoria(request.MotivoCategoria, tipo);
+
+        int cantidad;
+        if (tipo == "ENTRADA" && request.UnidadesCompra is int unidadesCompra && unidadesCompra > 0)
+        {
+            var rendimiento = request.RendimientoObservado is decimal observado && observado > 0
+                ? observado
+                : item.RendimientoEsperado;
+
+            cantidad = (int)Math.Round(unidadesCompra * rendimiento, MidpointRounding.AwayFromZero);
+
+            if (request.RendimientoObservado is decimal obs && obs > 0)
+                item.RendimientoEsperado = RecalibrarEma(item.RendimientoEsperado, obs);
+        }
+        else if (tipo == "AJUSTE")
+        {
+            if (request.Cantidad < 0)
+                throw new AppException("El conteo no puede ser negativo.");
+            cantidad = request.Cantidad;
+        }
+        else
+        {
+            if (request.Cantidad <= 0)
+                throw new AppException("La cantidad debe ser mayor a 0.");
+            cantidad = request.Cantidad;
+        }
+
         var stockAntes = item.StockActual;
 
         item.StockActual = tipo switch
         {
-            "ENTRADA" => item.StockActual + request.Cantidad,
-            "SALIDA"  => item.StockActual - request.Cantidad,
-            "AJUSTE"  => request.Cantidad,
+            "ENTRADA" => item.StockActual + cantidad,
+            "SALIDA"  => item.StockActual - cantidad,
+            "AJUSTE"  => cantidad,
             _         => item.StockActual
         };
 
         if (item.StockActual < 0)
             throw new AppException(
-                $"Stock insuficiente. Stock actual: {stockAntes}, se intenta retirar: {request.Cantidad}");
+                $"Stock insuficiente. Stock actual: {stockAntes}, se intenta retirar: {cantidad}");
+
+        // Conteo físico por debajo de lo esperado: hay merma de manipulación que el
+        // factor actual no estaba capturando bien. Se recalibra con la fracción
+        // perdida de esta observación (promedio móvil, ver RecalibrarEma) para que
+        // las próximas salidas descuenten más cerca de la realidad.
+        if (tipo == "AJUSTE" && categoria == "CONTEO_FISICO" && stockAntes > 0 && cantidad < stockAntes)
+        {
+            var fraccionPerdida = (decimal)(stockAntes - cantidad) / stockAntes;
+            item.FactorMermaUso = Math.Min(RecalibrarEma(item.FactorMermaUso, Math.Min(fraccionPerdida, 0.9m)), 0.5m);
+        }
 
         var movimiento = new InventoryMovement
         {
             Id              = Guid.NewGuid(),
             InventoryItemId = item.Id,
             TipoMovimiento  = tipo,
-            Cantidad        = request.Cantidad,
+            Cantidad        = cantidad,
             Motivo          = request.Motivo,
+            MotivoCategoria = categoria,
             UsuarioId       = usuarioId,
             FechaHora       = DateTime.UtcNow
         };
-
         _context.InventoryMovements.Add(movimiento);
+
+        // Merma de manipulación automática: solo sobre una SALIDA de consumo normal
+        // (no sobre una ya marcada CADUCIDAD u otra categoría explícita), y solo si el
+        // insumo tiene un factor configurado. Se registra como su propio movimiento,
+        // visible en el kardex, en vez de inflar en silencio la cantidad solicitada.
+        int? mermaGenerada = null;
+        if (tipo == "SALIDA" && categoria == "OTRO" && item.FactorMermaUso > 0)
+        {
+            var mermaEstimada = Math.Min(
+                (int)Math.Round(cantidad * item.FactorMermaUso, MidpointRounding.AwayFromZero),
+                item.StockActual);
+
+            if (mermaEstimada > 0)
+            {
+                item.StockActual -= mermaEstimada;
+                mermaGenerada = mermaEstimada;
+
+                _context.InventoryMovements.Add(new InventoryMovement
+                {
+                    Id              = Guid.NewGuid(),
+                    InventoryItemId = item.Id,
+                    TipoMovimiento  = "SALIDA",
+                    Cantidad        = mermaEstimada,
+                    Motivo          = $"Merma de manipulación estimada ({item.FactorMermaUso:P0})",
+                    MotivoCategoria = "MANIPULACION",
+                    UsuarioId       = usuarioId,
+                    FechaHora       = DateTime.UtcNow
+                });
+            }
+        }
+
+        item.ActualizadoEn = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Movimiento {Tipo} en item {Id}: {Antes}→{Despues}",
-            tipo, item.Id, stockAntes, item.StockActual);
+        _logger.LogInformation("Movimiento {Tipo}/{Categoria} en item {Id}: {Antes}→{Despues} (merma auto: {Merma})",
+            tipo, categoria, item.Id, stockAntes, item.StockActual, mermaGenerada ?? 0);
+
+        // STOCK_BAJO: solo en la transición de por-encima a por-debajo del mínimo,
+        // y suprimido si ya existe una notificación no leída reciente (24h).
+        if (item.StockMinimo > 0
+            && stockAntes > item.StockMinimo
+            && item.StockActual <= item.StockMinimo)
+        {
+            try
+            {
+                var yaNotificado = await _notificaciones.ExisteNoLeidaRecienteAsync(
+                    "STOCK_BAJO", item.Id, TimeSpan.FromHours(24));
+
+                if (!yaNotificado)
+                {
+                    await _notificaciones.CrearParaUsuariosAsync(
+                        "STOCK_BAJO",
+                        $"Stock bajo: {item.Nombre}",
+                        $"{item.Nombre} bajó a {item.StockActual} {item.UnidadMedida ?? "u"} (mínimo: {item.StockMinimo}).",
+                        ["ADMIN", "EMPLEADO"],
+                        "InventoryItem", item.Id);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al notificar STOCK_BAJO para insumo {Id}", item.Id);
+            }
+        }
 
         return new InventoryMovementDto
         {
@@ -215,13 +440,32 @@ public class InventoryService : IInventoryService
             InventoryItemId = item.Id,
             NombreItem      = item.Nombre,
             Tipo            = tipo,
-            Cantidad        = request.Cantidad,
+            Cantidad        = cantidad,
             StockAntes      = stockAntes,
             StockDespues    = item.StockActual,
             Motivo          = request.Motivo,
+            MotivoCategoria = categoria,
+            MermaAutomaticaGenerada = mermaGenerada,
             FechaHora       = movimiento.FechaHora
         };
     }
+
+    private static readonly HashSet<string> _categoriasValidas =
+        new(["RECEPCION", "MANIPULACION", "CADUCIDAD", "CONTEO_FISICO", "OTRO"]);
+
+    private static string NormalizarCategoria(string? solicitada, string tipo)
+    {
+        var c = solicitada?.Trim().ToUpper();
+        if (!string.IsNullOrEmpty(c) && _categoriasValidas.Contains(c)) return c;
+
+        return tipo == "ENTRADA" ? "RECEPCION" : "OTRO";
+    }
+
+    /// Promedio móvil exponencial simple (α=0.3): pesa 70% el histórico y 30% la
+    /// observación más reciente, para que un solo dato atípico no descalibre el
+    /// insumo pero varias observaciones consistentes sí lo corrijan con el tiempo.
+    private static decimal RecalibrarEma(decimal actual, decimal observado) =>
+        Math.Round(actual * 0.7m + observado * 0.3m, 4);
 
     // ── Listar movimientos ────────────────────────────────────────
     public async Task<PagedResultDto<InventoryMovementDto>> ListarMovimientosAsync(
@@ -250,6 +494,7 @@ public class InventoryService : IInventoryService
                 Tipo            = m.TipoMovimiento,
                 Cantidad        = m.Cantidad,
                 Motivo          = m.Motivo,
+                MotivoCategoria = m.MotivoCategoria,
                 FechaHora       = m.FechaHora
             })
             .ToListAsync();
@@ -850,7 +1095,12 @@ public class InventoryService : IInventoryService
         PrecioCosto  = i.PrecioCosto,
         EsFlorPrimaria = i.EsFlorPrimaria,
         ImagenUrl    = i.ImagenUrl,
-        Activo       = i.Activo
+        Activo       = i.Activo,
+        RendimientoEsperado = i.RendimientoEsperado,
+        FactorMermaUso      = i.FactorMermaUso,
+        PrecioUnidadCompra  = i.PrecioUnidadCompra,
+        UnidadCompra        = i.UnidadCompra,
+        VidaUtilDias        = i.VidaUtilDias
     };
 }
 

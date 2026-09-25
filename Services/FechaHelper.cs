@@ -40,6 +40,8 @@ public class FechaHelper : IFechaHelper
         _ahoraUtc = ahoraUtc ?? (() => DateTime.UtcNow);
     }
 
+    public DateTime AhoraUtc() => _ahoraUtc();
+
     public DateTime AhoraLocal() => ALocal(_ahoraUtc());
 
     public DateOnly HoyLocal() => DateOnly.FromDateTime(AhoraLocal());

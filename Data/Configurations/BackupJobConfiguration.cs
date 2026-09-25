@@ -17,6 +17,7 @@ public class BackupJobConfiguration : IEntityTypeConfiguration<BackupJob>
         builder.Property(b => b.Descripcion).HasMaxLength(500);
         builder.Property(b => b.Formato).HasMaxLength(10).HasDefaultValue("BACKUP");
         builder.Property(b => b.DriveFileId).HasMaxLength(255);
+        builder.Property(b => b.CloudinaryPublicId).HasMaxLength(255);
         builder.Property(b => b.CreadoEn).HasDefaultValueSql("NOW()");
     }
 }

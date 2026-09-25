@@ -16,18 +16,24 @@ namespace FloreriaBautista.Services.Backups;
 /// </summary>
 public class BackupService : IBackupService
 {
-    private readonly AppDbContext           _context;
-    private readonly GoogleDriveService     _driveService;
-    private readonly ILogger<BackupService> _logger;
+    private readonly AppDbContext              _context;
+    private readonly GoogleDriveService        _driveService;
+    private readonly CloudinaryBackupService   _cloudinaryService;
+    private readonly ILogger<BackupService>    _logger;
 
     private static readonly HashSet<string> TablasExcluidas =
         new(StringComparer.OrdinalIgnoreCase) { "schema_migrations", "__efmigrationshistory" };
 
-    public BackupService(AppDbContext context, GoogleDriveService driveService, ILogger<BackupService> logger)
+    public BackupService(
+        AppDbContext context,
+        GoogleDriveService driveService,
+        CloudinaryBackupService cloudinaryService,
+        ILogger<BackupService> logger)
     {
-        _context      = context;
-        _driveService = driveService;
-        _logger       = logger;
+        _context           = context;
+        _driveService      = driveService;
+        _cloudinaryService = cloudinaryService;
+        _logger            = logger;
     }
 
     // ── Tablas disponibles ────────────────────────────────────────
@@ -51,9 +57,11 @@ public class BackupService : IBackupService
     }
 
     // ── Backup FULL ───────────────────────────────────────────────
-    public async Task<BackupResponseDto> CrearBackupFullAsync(string? descripcion, Guid usuarioId, string formato = "BACKUP")
+    public async Task<BackupResponseDto> CrearBackupFullAsync(
+        string? descripcion, Guid usuarioId, string formato = "BACKUP", string destino = "DRIVE")
     {
         formato = NormalizarFormato(formato);
+        destino = NormalizarDestino(destino);
 
         var job = new BackupJob
         {
@@ -76,12 +84,25 @@ public class BackupService : IBackupService
             await EjecutarPgDumpAsync(tmpPath, tabla: null, formato);
             _logger.LogInformation("Backup FULL generado en tmp: {Path}", tmpPath);
 
-            var (driveId, driveEnlace) = await SubirADriveAsync(tmpPath, nombre);
+            job.TamanoBytes = new FileInfo(tmpPath).Length;
+
+            string? driveEnlace = null;
+
+            if (destino is "DRIVE" or "AMBOS")
+            {
+                var (driveId, enlace) = await SubirADriveAsync(tmpPath, nombre);
+                job.DriveFileId = driveId;
+                driveEnlace     = enlace;
+            }
+
+            if (destino is "CLOUDINARY" or "AMBOS")
+            {
+                var publicId = await SubirACloudinaryAsync(tmpPath, nombre);
+                job.CloudinaryPublicId = publicId;
+            }
 
             job.Estado       = "COMPLETADO";
             job.CompletadoEn = DateTime.UtcNow;
-            job.DriveFileId  = driveId;
-            job.TamanoBytes  = new FileInfo(tmpPath).Length;
             await _context.SaveChangesAsync();
 
             return MapToDto(job, driveEnlace);
@@ -93,7 +114,7 @@ public class BackupService : IBackupService
             job.MensajeError = ex.Message;
             await _context.SaveChangesAsync();
 
-            _logger.LogError(ex, "Error al crear backup FULL");
+            _logger.LogError(ex, "Error al crear backup FULL (destino: {Destino})", destino);
             return MapToDto(job, null);
         }
         finally
@@ -178,7 +199,8 @@ public class BackupService : IBackupService
         return jobs.Select(j => MapToDto(j,
             j.DriveFileId != null
                 ? $"https://drive.google.com/file/d/{j.DriveFileId}/view"
-                : null)).ToList();
+                : null))
+            .ToList();
     }
 
     public async Task<List<DriveFileDto>> ListarArchivosDriveAsync()
@@ -222,14 +244,13 @@ public class BackupService : IBackupService
 
         foreach (var job in aEliminar)
         {
-            // 1. Intentar borrar de Google Drive si tiene FileId
             if (!string.IsNullOrEmpty(job.DriveFileId))
             {
                 try
                 {
                     await _driveService.EliminarArchivoAsync(job.DriveFileId);
                     _logger.LogInformation(
-                        "Backup eliminado de Drive. ID: {DriveId} | Backup: {BackupId}", 
+                        "Backup eliminado de Drive. ID: {DriveId} | Backup: {BackupId}",
                         job.DriveFileId, job.Id);
                 }
                 catch (Exception ex)
@@ -240,7 +261,21 @@ public class BackupService : IBackupService
                 }
             }
 
-            // 2. Eliminar registro de BD
+            if (!string.IsNullOrEmpty(job.CloudinaryPublicId))
+            {
+                try
+                {
+                    await _cloudinaryService.EliminarArchivoAsync(job.CloudinaryPublicId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "No se pudo eliminar de Cloudinary ({PublicId}). Se eliminará solo el registro de BD.",
+                        job.CloudinaryPublicId);
+                }
+            }
+
+            // Eliminar registro de BD
             _context.BackupJobs.Remove(job);
             eliminados++;
         }
@@ -257,19 +292,24 @@ public class BackupService : IBackupService
     // ── Mapeo ─────────────────────────────────────────────────────
     private static BackupResponseDto MapToDto(BackupJob job, string? driveEnlace) => new()
     {
-        Id           = job.Id,
-        Tipo         = job.Tipo,
-        Formato      = job.Formato,
-        NombreTabla  = job.NombreTabla,
-        Estado       = job.Estado,
-        Descripcion  = job.Descripcion,
-        MensajeError = job.MensajeError,
-        CreadoEn     = job.CreadoEn,
-        CompletadoEn = job.CompletadoEn,
-        TamanoBytes  = job.TamanoBytes,
-        DriveFileId  = job.DriveFileId,
-        DriveEnlace  = driveEnlace,
-        SubidoADrive = job.DriveFileId != null
+        Id                 = job.Id,
+        Tipo               = job.Tipo,
+        Formato            = job.Formato,
+        NombreTabla        = job.NombreTabla,
+        Estado             = job.Estado,
+        Descripcion        = job.Descripcion,
+        MensajeError       = job.MensajeError,
+        CreadoEn           = job.CreadoEn,
+        CompletadoEn       = job.CompletadoEn,
+        TamanoBytes        = job.TamanoBytes,
+        DriveFileId        = job.DriveFileId,
+        DriveEnlace        = driveEnlace,
+        SubidoADrive       = job.DriveFileId != null,
+        CloudinaryPublicId = job.CloudinaryPublicId,
+        CloudinaryEnlace   = job.CloudinaryPublicId != null
+            ? $"https://res.cloudinary.com/{Environment.GetEnvironmentVariable("CLOUDINARY_CLOUD_NAME")}/raw/upload/{job.CloudinaryPublicId}"
+            : null,
+        SubidoACloudinary  = job.CloudinaryPublicId != null
     };
 
     // ── pg_dump ───────────────────────────────────────────────────
@@ -318,6 +358,14 @@ public class BackupService : IBackupService
         return (driveId, enlace);
     }
 
+    // ── Subir a Cloudinary ──────────────────────────────────────
+    private async Task<string> SubirACloudinaryAsync(string rutaArchivo, string nombre)
+    {
+        var publicId = await _cloudinaryService.SubirArchivoAsync(rutaArchivo, nombre);
+        _logger.LogInformation("Backup subido a Cloudinary. PublicId: {Id}", publicId);
+        return publicId;
+    }
+
     // ── Helpers ───────────────────────────────────────────────────
     private static NpgsqlConnection CrearConexion()
     {
@@ -344,6 +392,17 @@ public class BackupService : IBackupService
     {
         var upper = formato.ToUpperInvariant().Trim();
         return upper == "SQL" ? "SQL" : "BACKUP";
+    }
+
+    private static string NormalizarDestino(string destino)
+    {
+        var upper = destino.ToUpperInvariant().Trim();
+        return upper switch
+        {
+            "CLOUDINARY" => "CLOUDINARY",
+            "AMBOS"      => "AMBOS",
+            _            => "DRIVE"
+        };
     }
 
     private Task<bool> UsuarioExisteAsync(Guid usuarioId)

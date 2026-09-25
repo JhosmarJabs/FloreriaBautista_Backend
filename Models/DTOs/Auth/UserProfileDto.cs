@@ -11,6 +11,7 @@ public class UserProfileDto
     public DateOnly?    FechaNacimiento  { get; set; }
     public string       Estado           { get; set; } = string.Empty;
     public bool         CorreoVerificado { get; set; }
+    public bool         EsResponsableTurno { get; set; }
     public List<string> Roles            { get; set; } = [];
     public DateTime     CreadoEn         { get; set; }
 }

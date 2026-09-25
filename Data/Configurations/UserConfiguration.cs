@@ -19,6 +19,11 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.Sexo).HasMaxLength(10);
         builder.Property(u => u.PasswordHash).HasMaxLength(255);
         builder.Property(u => u.Estado).HasMaxLength(20).HasDefaultValue("ACTIVO");
+        builder.Property(u => u.EsResponsableTurno).HasDefaultValue(false);
+        builder.HasIndex(u => u.EsResponsableTurno)
+               .IsUnique()
+               .HasFilter("es_responsable_turno = true")
+               .HasDatabaseName("ux_users_responsable_turno");
         builder.Property(u => u.CreadoEn).HasDefaultValueSql("NOW()");
         builder.Property(u => u.ActualizadoEn).HasDefaultValueSql("NOW()");
 

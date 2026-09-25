@@ -246,7 +246,7 @@ public class AuthService : IAuthService
 
     private async Task<string> GuardarRefreshTokenAsync(Guid userId)
     {
-        var days  = int.TryParse(Environment.GetEnvironmentVariable("JWT_REFRESH_EXPIRATION_DAYS"), out var d) ? d : 7;
+        var days  = int.TryParse(Environment.GetEnvironmentVariable("JWT_REFRESH_EXPIRATION_DAYS"), out var d) ? d : 365;
         var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
         _context.AuthTokens.Add(new AuthToken
         {

@@ -8,9 +8,15 @@
     <Compile Remove="FloreriaBautista.Tests\**" />
     <EmbeddedResource Remove="FloreriaBautista.Tests\**" />
     <None Remove="FloreriaBautista.Tests\**" />
+    <!-- El SDK Web mete todo lo que no sea código como Content y lo copia a la
+         salida. Sin este Remove, el bin/ del proyecto de pruebas se copia dentro
+         de sí mismo y anida una carpeta más en cada build, hasta que la ruta pasa
+         el límite de Windows y la compilación falla con MSB3030. -->
+    <Content Remove="FloreriaBautista.Tests\**" />
     <Compile Remove="scratch\**" />
     <EmbeddedResource Remove="scratch\**" />
     <None Remove="scratch\**" />
+    <Content Remove="scratch\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -29,5 +35,7 @@
     <!-- Google Drive SDK -->
     <PackageReference Include="Google.Apis.Drive.v3" Version="1.*" />
     <PackageReference Include="Google.Apis.Auth" Version="1.*" />
+    <!-- Cloudinary SDK (subida firmada de respaldos raw) -->
+    <PackageReference Include="CloudinaryDotNet" Version="1.*" />
   </ItemGroup>
 </Project>

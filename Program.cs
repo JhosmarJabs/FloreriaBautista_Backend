@@ -2,6 +2,7 @@ using Datadog.Trace;
 using Datadog.Trace.Configuration;
 using DotNetEnv;
 using FloreriaBautista.Extensions;
+using FloreriaBautista.Hubs;
 using FloreriaBautista.Json;
 using FloreriaBautista.Middleware;
 
@@ -50,7 +51,14 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("DefaultPolicy", policy =>
     {
-        policy.WithOrigins("http://localhost:3000", "http://localhost:3001", "http://localhost:5173")
+        // 8083 es Metro, el servidor de desarrollo de la app móvil interna
+        // (mobile-admin). Solo hace falta cuando se prueba la app en el
+        // navegador: compilada para Android o iOS no pasa por CORS.
+        policy.WithOrigins(
+                  "http://localhost:3000",
+                  "http://localhost:3001",
+                  "http://localhost:5173",
+                  "http://localhost:8083")
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials();
@@ -78,5 +86,6 @@ app.UseMiddleware<AlexaApiKeyMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<VentaInstantaneaHub>("/hubs/venta-instantanea");
 
 app.Run();

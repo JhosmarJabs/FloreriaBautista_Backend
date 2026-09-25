@@ -12,6 +12,10 @@ public class InventoryMovementConfiguration : IEntityTypeConfiguration<Inventory
         builder.HasKey(m => m.Id);
         builder.Property(m => m.TipoMovimiento).HasMaxLength(20).IsRequired();
         builder.Property(m => m.Motivo).HasMaxLength(255);
+        builder.Property(m => m.MotivoCategoria)
+               .HasColumnName("motivo_categoria")
+               .HasMaxLength(20)
+               .HasDefaultValue("OTRO");
         builder.Property(m => m.FechaHora).HasDefaultValueSql("NOW()");
     }
 }

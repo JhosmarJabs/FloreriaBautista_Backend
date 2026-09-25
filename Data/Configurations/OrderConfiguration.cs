@@ -30,6 +30,8 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.SaldoPendiente).HasColumnType("numeric(10,2)");
         builder.Property(o => o.FechaCreacion).HasDefaultValueSql("NOW()");
         builder.Property(o => o.Archivado).HasDefaultValue(false);
+        builder.Property(o => o.ActualizadoEn).HasDefaultValueSql("NOW()");
+        builder.HasIndex(o => o.ActualizadoEn);
 
         builder.HasMany(o => o.OrderItems)
                .WithOne(oi => oi.Order)

@@ -153,6 +153,8 @@ public class ProductService : IProductService
                 .ThenInclude(pc => pc.Category)
                 .Include(p => p.ProductCatalogos)
                 .ThenInclude(pc => pc.Catalogo)
+                .Include(p => p.ProductRecipes)
+                .ThenInclude(pr => pr.InventoryItem)
                 .FirstOrDefaultAsync(p =>
                     p.Id == id
                     && p.Activo
@@ -174,8 +176,23 @@ public class ProductService : IProductService
             EsPersonalizable = p.EsPersonalizable,
             Visibilidad = p.Visibilidad,
             ImagenUrl = p.ImagenUrl,
+            PermiteVentaInstantanea = p.PermiteVentaInstantanea,
             Categorias = (p.ProductCategories ?? []).Select(pc => pc.Category?.Nombre ?? "Categoría").ToList(),
             Catalogos = (p.ProductCatalogos ?? []).Select(pc => pc.Catalogo?.Nombre ?? "Catálogo").ToList(),
+            // Incluir la receta (simplificada) solo para productos con venta instantanea,
+            // para que el frontend pueda evaluar si mostrar el checkbox de confirmacion.
+            Receta = p.PermiteVentaInstantanea
+                ? (p.ProductRecipes ?? [])
+                    .Select(pr => new RecipeItemDto
+                    {
+                        InventoryItemId = pr.InventoryItemId,
+                        Nombre = pr.InventoryItem?.Nombre ?? "Insumo",
+                        Cantidad = pr.CantidadRequerida,
+                        PrecioCosto = 0, // No exponer costos al publico
+                        EsFlorPrimaria = pr.InventoryItem?.EsFlorPrimaria ?? false,
+                    })
+                    .ToList()
+                : [],
         };
 
     // ── Detalle admin ─────────────────────────────────────────────
@@ -200,7 +217,9 @@ public class ProductService : IProductService
         string? busqueda,
         string? estado,
         int page,
-        int size
+        int size,
+        string? sortBy = null,
+        bool? soloReales = null
     )
     {
         var query = _context.Products.Where(p => p.Activo).AsQueryable();
@@ -211,9 +230,23 @@ public class ProductService : IProductService
         if (!string.IsNullOrWhiteSpace(estado))
             query = query.Where(p => p.Estado == estado.ToUpper());
 
+        if (soloReales == true)
+            query = query.Where(p => p.EsReal);
+
         var total = await query.CountAsync();
-        var items = await query
-            .OrderByDescending(p => p.CreadoEn)
+
+        IOrderedQueryable<Product> ordered = sortBy?.ToLower() switch
+        {
+            "nombre"      => query.OrderBy(p => p.Nombre),
+            "nombre_desc" => query.OrderByDescending(p => p.Nombre),
+            "precio"      => query.OrderBy(p => p.PrecioBase),
+            "precio_desc" => query.OrderByDescending(p => p.PrecioBase),
+            "tipo"        => query.OrderBy(p => p.Tipo).ThenBy(p => p.Nombre),
+            "tipo_desc"   => query.OrderByDescending(p => p.Tipo).ThenBy(p => p.Nombre),
+            _             => query.OrderByDescending(p => p.CreadoEn),
+        };
+
+        var items = await ordered
             .Skip((page - 1) * size)
             .Take(size)
             .Select(p => new ProductSummaryDto
@@ -225,6 +258,7 @@ public class ProductService : IProductService
                 Estado = p.Estado,
                 ImagenUrl = p.ImagenUrl,
                 Stock = null,
+                EsReal = p.EsReal,
             })
             .ToListAsync();
 
@@ -235,6 +269,62 @@ public class ProductService : IProductService
             Pagina = page,
             TamanoPagina = size,
             TotalPaginas = (int)Math.Ceiling(total / (double)size),
+        };
+    }
+
+    // ── Índice completo (CQRS lectura) ─────────────────────────────
+    public async Task<IndexResultDto<ProductIndexDto>> ListarIndiceAsync()
+    {
+        var ahora = DateTime.UtcNow;
+        var items = await _context.Products
+            .Where(p => p.Activo)
+            .OrderBy(p => p.Nombre)
+            .Select(p => new ProductIndexDto
+            {
+                Id            = p.Id,
+                Nombre        = p.Nombre,
+                PrecioBase    = p.PrecioBase,
+                Tipo          = p.Tipo,
+                Estado        = p.Estado,
+                ImagenUrl     = p.ImagenUrl,
+                Activo        = p.Activo,
+                EsReal        = p.EsReal,
+                ActualizadoEn = p.ActualizadoEn
+            })
+            .ToListAsync();
+
+        return new IndexResultDto<ProductIndexDto>
+        {
+            Items           = items,
+            SincronizadoEn = ahora.ToString("o")
+        };
+    }
+
+    // ── Delta incremental ────────────────────────────────────────
+    public async Task<IndexResultDto<ProductIndexDto>> ListarDeltaAsync(DateTime desde)
+    {
+        var ahora = DateTime.UtcNow;
+        var items = await _context.Products
+            .Where(p => p.ActualizadoEn > desde)
+            .OrderBy(p => p.Nombre)
+            .Select(p => new ProductIndexDto
+            {
+                Id            = p.Id,
+                Nombre        = p.Nombre,
+                PrecioBase    = p.PrecioBase,
+                Tipo          = p.Tipo,
+                Estado        = p.Estado,
+                ImagenUrl     = p.ImagenUrl,
+                Activo        = p.Activo,
+                EsReal        = p.EsReal,
+                ActualizadoEn = p.ActualizadoEn
+            })
+            .ToListAsync();
+
+        return new IndexResultDto<ProductIndexDto>
+        {
+            Items           = items,
+            SincronizadoEn = ahora.ToString("o")
         };
     }
 
@@ -252,6 +342,8 @@ public class ProductService : IProductService
             Estado = request.Estado.Trim().ToUpper(),
             Visibilidad = request.Visibilidad.Trim().ToUpper(),
             ImagenUrl = request.ImagenUrl,
+            PermiteVentaInstantanea = request.PermiteVentaInstantanea,
+            LimiteVentaInstantanea = request.LimiteVentaInstantanea,
             CreadoEn = DateTime.UtcNow,
             ActualizadoEn = DateTime.UtcNow,
         };
@@ -302,6 +394,11 @@ public class ProductService : IProductService
             producto.ImagenUrl = request.ImagenUrl;
         if (request.Activo.HasValue)
             producto.Activo = request.Activo.Value;
+        if (request.PermiteVentaInstantanea.HasValue)
+            producto.PermiteVentaInstantanea = request.PermiteVentaInstantanea.Value;
+        // LimiteVentaInstantanea se actualiza siempre que se envia (puede ser null para quitar el limite)
+        if (request.PermiteVentaInstantanea.HasValue || request.LimiteVentaInstantanea.HasValue)
+            producto.LimiteVentaInstantanea = request.LimiteVentaInstantanea;
 
         producto.ActualizadoEn = DateTime.UtcNow;
 
@@ -368,6 +465,27 @@ public class ProductService : IProductService
         // 3. Actualizar Receta
         if (request.Receta != null)
         {
+            // Validacion de receta simplificada para venta instantanea:
+            // si el producto permite venta instantanea, filtrar a solo flor primaria.
+            if (producto.PermiteVentaInstantanea && request.Receta.Count > 0)
+            {
+                var invIds = request.Receta.Select(r => r.InventoryItemId).Distinct().ToList();
+                var invItems = await _context.InventoryItems
+                    .Where(i => invIds.Contains(i.Id))
+                    .ToDictionaryAsync(i => i.Id);
+
+                var soloFlorPrimaria = request.Receta
+                    .Where(r => invItems.TryGetValue(r.InventoryItemId, out var item) && item.EsFlorPrimaria)
+                    .ToList();
+
+                if (soloFlorPrimaria.Count == 0)
+                    throw new AppException(
+                        "Este producto permite venta instantanea y requiere al menos " +
+                        "un insumo con flor primaria en su receta.");
+
+                request.Receta = soloFlorPrimaria;
+            }
+
             var idsDeseadas = request.Receta.Select(r => r.InventoryItemId).ToList();
             
             // Eliminar
@@ -543,6 +661,9 @@ public class ProductService : IProductService
             Visibilidad = p.Visibilidad,
             ImagenUrl = p.ImagenUrl,
             Activo = p.Activo,
+            EsReal = p.EsReal,
+            PermiteVentaInstantanea = p.PermiteVentaInstantanea,
+            LimiteVentaInstantanea = p.LimiteVentaInstantanea,
             Categorias = (p.ProductCategories ?? []).Select(pc => pc.Category?.Nombre ?? "Categoría Pendiente").ToList(),
             Catalogos = (p.ProductCatalogos ?? []).Select(pc => pc.Catalogo?.Nombre ?? "Catálogo Pendiente").ToList(),
             Receta = (p.ProductRecipes ?? [])

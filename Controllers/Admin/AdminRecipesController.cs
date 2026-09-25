@@ -37,6 +37,38 @@ public class AdminRecipesController : ControllerBase
         var product = await _context.Products.FindAsync(productId);
         if (product == null) return NotFound(ApiResponseDto<string>.Fail("Producto no encontrado"));
 
+        // ── Validacion de receta simplificada para venta instantanea ──
+        // Si el producto permite venta instantanea, solo se acepta la fila
+        // con flor primaria (exactamente un insumo con EsFlorPrimaria = true).
+        if (product.PermiteVentaInstantanea && request.Count > 0)
+        {
+            // Cargar los InventoryItems referenciados para verificar EsFlorPrimaria
+            var inventoryItemIds = request.Select(r => r.InventoryItemId).Distinct().ToList();
+            var inventoryItems = await _context.InventoryItems
+                .Where(i => inventoryItemIds.Contains(i.Id))
+                .ToDictionaryAsync(i => i.Id);
+
+            var filasPrimarias = request
+                .Where(r => inventoryItems.TryGetValue(r.InventoryItemId, out var item) && item.EsFlorPrimaria)
+                .ToList();
+            var filasNoPrimarias = request
+                .Where(r => !inventoryItems.TryGetValue(r.InventoryItemId, out var item) || !item.EsFlorPrimaria)
+                .ToList();
+
+            if (filasPrimarias.Count == 0)
+            {
+                return UnprocessableEntity(ApiResponseDto<string>.Fail(
+                    "Este producto permite venta instantanea y requiere exactamente " +
+                    "un insumo con flor primaria en su receta."));
+            }
+
+            if (filasNoPrimarias.Count > 0)
+            {
+                // Advertencia: se descartan las filas que no son flor primaria
+                request = filasPrimarias;
+            }
+        }
+
         var existentes = await _context.ProductRecipes.Where(pr => pr.ProductId == productId).ToListAsync();
         _context.ProductRecipes.RemoveRange(existentes);
 

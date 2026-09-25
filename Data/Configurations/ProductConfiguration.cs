@@ -18,6 +18,8 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(p => p.Estado).HasMaxLength(20).HasDefaultValue("ACTIVO");
         builder.Property(p => p.Visibilidad).HasMaxLength(20).HasDefaultValue("AMBOS");
         builder.Property(p => p.ImagenUrl).HasMaxLength(255);
+        builder.Property(p => p.EsReal).HasDefaultValue(true);
+        builder.Property(p => p.PermiteVentaInstantanea).HasDefaultValue(false);
         builder.Property(p => p.CreadoEn).HasDefaultValueSql("NOW()");
         builder.Property(p => p.ActualizadoEn).HasDefaultValueSql("NOW()");
 

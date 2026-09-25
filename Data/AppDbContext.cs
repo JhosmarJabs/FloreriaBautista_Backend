@@ -23,12 +23,17 @@ public class AppDbContext : DbContext
     public DbSet<Catalogo>            Catalogos            => Set<Catalogo>();
     public DbSet<CustomizationOption> CustomizationOptions => Set<CustomizationOption>();
     public DbSet<Promotion>           Promotions           => Set<Promotion>();
+    public DbSet<Oferta>              Ofertas              => Set<Oferta>();
+    public DbSet<Descuento>           Descuentos           => Set<Descuento>();
     public DbSet<QuickSaleTemplate>     QuickSaleTemplates     => Set<QuickSaleTemplate>();
     public DbSet<QuickSaleTemplateItem> QuickSaleTemplateItems => Set<QuickSaleTemplateItem>();
 
     public DbSet<ProductCategory>            ProductCategories           => Set<ProductCategory>();
     public DbSet<ProductCatalogo>            ProductCatalogos            => Set<ProductCatalogo>();
     public DbSet<ProductCustomizationOption> ProductCustomizationOptions => Set<ProductCustomizationOption>();
+
+    // ── Venta instantánea ────────────────────────────────────────────
+    public DbSet<SolicitudVentaInstantanea> SolicitudesVentaInstantanea => Set<SolicitudVentaInstantanea>();
 
     // ── Pedidos ────────────────────────────────────────────────────
     public DbSet<Order>                  Orders                  => Set<Order>();
@@ -37,6 +42,13 @@ public class AppDbContext : DbContext
     public DbSet<Payment>                Payments                => Set<Payment>();
     public DbSet<Delivery>               Deliveries              => Set<Delivery>();
 
+    // ── Caja y gastos del empleado ─────────────────────────────────
+    // Tablas generales compartidas: el aislamiento por empleado y por día lo
+    // aplica el backend al consultar (ver EmployeeScope), no el almacenamiento.
+    public DbSet<Expense>     Expenses     => Set<Expense>();
+    public DbSet<CashCut>     CashCuts     => Set<CashCut>();
+    public DbSet<ErrorReport> ErrorReports => Set<ErrorReport>();
+
     // ── Inventario ─────────────────────────────────────────────────
     public DbSet<InventoryItem>          InventoryItems           => Set<InventoryItem>();
     public DbSet<InventoryMovement>      InventoryMovements       => Set<InventoryMovement>();
@@ -44,6 +56,9 @@ public class AppDbContext : DbContext
     public DbSet<ProductRecipe>          ProductRecipes           => Set<ProductRecipe>();
     public DbSet<SupplyOrder>            SupplyOrders             => Set<SupplyOrder>();
     public DbSet<SupplyOrderItem>        SupplyOrderItems         => Set<SupplyOrderItem>();
+
+    // ── Notificaciones ──────────────────────────────────────────────
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     // ── Operación técnica ──────────────────────────────────────────
     public DbSet<BackupJob>         BackupJobs         => Set<BackupJob>();

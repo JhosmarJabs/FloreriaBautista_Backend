@@ -10,6 +10,8 @@ public class UpdateProductRequestDto
     public string?      Estado           { get; set; }
     public string?      Visibilidad      { get; set; }
     public string?      ImagenUrl        { get; set; }
+    public bool?        PermiteVentaInstantanea { get; set; }
+    public int?         LimiteVentaInstantanea  { get; set; }
     public List<string>? Categorias      { get; set; }
     public List<string>? Catalogos       { get; set; }
     public List<ProductRecipeRequestDto>? Receta { get; set; }

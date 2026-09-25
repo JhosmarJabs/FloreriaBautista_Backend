@@ -5,15 +5,21 @@ using FloreriaBautista.Models.DTOs.Orders;
 using FloreriaBautista.Models.Entities;
 using FloreriaBautista.Models.Enums;
 using FloreriaBautista.Models.Exceptions;
+using FloreriaBautista.Services.Employee;
 using FloreriaBautista.Services.Interfaces;
+using FloreriaBautista.Services.Notifications;
+using FloreriaBautista.Services.Realtime;
 
 namespace FloreriaBautista.Services;
 
 public class OrderService : IOrderService
 {
-    private readonly AppDbContext           _context;
-    private readonly IFechaHelper           _fechas;
-    private readonly ILogger<OrderService>  _logger;
+    private readonly AppDbContext            _context;
+    private readonly IFechaHelper            _fechas;
+    private readonly IRealtimeNotifier       _realtime;
+    private readonly INotificationService    _notificaciones;
+    private readonly IPricingService         _pricing;
+    private readonly ILogger<OrderService>   _logger;
 
     // Estados válidos y sus transiciones permitidas
     private static readonly Dictionary<string, List<string>> Transiciones = new()
@@ -26,11 +32,15 @@ public class OrderService : IOrderService
         ["PENDIENTE_ANULACION"]  = ["CANCELADO", "EN_PREPARACION"]
     };
 
-    public OrderService(AppDbContext context, IFechaHelper fechas, ILogger<OrderService> logger)
+    public OrderService(AppDbContext context, IFechaHelper fechas, IRealtimeNotifier realtime,
+        INotificationService notificaciones, IPricingService pricing, ILogger<OrderService> logger)
     {
-        _context = context;
-        _fechas  = fechas;
-        _logger  = logger;
+        _context        = context;
+        _fechas         = fechas;
+        _realtime       = realtime;
+        _notificaciones = notificaciones;
+        _pricing        = pricing;
+        _logger         = logger;
     }
 
     // ── Crear pedido cliente autenticado ──────────────────────────
@@ -42,12 +52,26 @@ public class OrderService : IOrderService
 
         return await CrearPedidoAsync(customer, "WEB", request.TipoPedido, request.FechaEntrega,
             request.HoraEntrega, request.Direccion, request.Items, request.Notas,
-            costoEnvio: request.CostoEnvio);
+            costoEnvio: request.CostoEnvio, codigoCupon: request.CodigoCupon);
     }
 
     // ── Crear pedido físico ───────────────────────────────────────
-    public async Task<OrderResponseDto> CrearPedidoFisicoAsync(CreatePhysicalOrderRequestDto request)
+    public async Task<OrderResponseDto> CrearPedidoFisicoAsync(
+        CreatePhysicalOrderRequestDto request, Guid? atendidoPorUsuarioId = null)
     {
+        // Deduplicación offline-first: si ya existe un pedido con este idLocalOffline,
+        // devolvemos el existente en vez de crear uno nuevo.
+        if (request.IdLocalOffline.HasValue)
+        {
+            var existente = await _context.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.OrderItems).ThenInclude(oi => oi.Product)
+                .Include(o => o.Payments)
+                .FirstOrDefaultAsync(o => o.IdLocalOffline == request.IdLocalOffline);
+            if (existente != null)
+                return MapToDto(existente);
+        }
+
         var esInstantaneo = request.TipoPedido.Trim().ToUpper() == "INSTANTANEO";
 
         // La dirección solo es obligatoria si el pedido sí implica una entrega a domicilio.
@@ -67,7 +91,7 @@ public class OrderService : IOrderService
                 TipoCliente = "FISICO",
                 Nombre      = request.NombreCliente.Trim(),
                 Telefono    = request.Telefono ?? "",
-                CreadoEn    = DateTime.UtcNow
+                CreadoEn    = _fechas.AhoraUtc()
             };
             _context.Customers.Add(customer);
             await _context.SaveChangesAsync();
@@ -76,8 +100,10 @@ public class OrderService : IOrderService
         return await CrearPedidoAsync(customer, "FISICO", request.TipoPedido, request.FechaEntrega,
             request.HoraEntrega, request.Direccion, request.Items, request.Notas,
             entregaInmediata: esInstantaneo,
+            atendidoPorUsuarioId: atendidoPorUsuarioId,
             montoPagado: request.MontoPagado, metodoPago: request.MetodoPago,
-            costoEnvio: request.CostoEnvio);
+            costoEnvio: request.CostoEnvio,
+            idLocalOffline: request.IdLocalOffline);
     }
 
     // ── Mis pedidos ───────────────────────────────────────────────
@@ -134,29 +160,68 @@ public class OrderService : IOrderService
     }
 
     // ── Cambiar estado ────────────────────────────────────────────
+    /// <param name="restringirAEmpleado">
+    /// Cuando viene un id, el pedido debe estar dentro del alcance de ese
+    /// empleado o la llamada falla. Null = sin restricción (admin o proceso del
+    /// sistema). Sin esto, cualquier empleado podría mover por id el pedido de
+    /// cualquier otro con solo adivinar el Guid.
+    /// </param>
     public async Task<OrderResponseDto> CambiarEstadoAsync(
-        Guid orderId, UpdateOrderStatusRequestDto request, List<string> rolesUsuario)
+        Guid orderId, UpdateOrderStatusRequestDto request, List<string> rolesUsuario,
+        Guid? restringirAEmpleado = null)
     {
-        var order = await ObtenerConDetalleAsync(orderId);
-        var nuevoEstado = request.NuevoEstado.ToUpper();
+        await AsegurarVisibleAsync(orderId, restringirAEmpleado);
 
-        if (!Transiciones.TryGetValue(order.EstadoPedido, out var permitidos) ||
+        var order = await ObtenerConDetalleAsync(orderId);
+        var nuevoEstado    = request.NuevoEstado.ToUpper();
+        var estadoAnterior = order.EstadoPedido;
+
+        if (!Transiciones.TryGetValue(estadoAnterior, out var permitidos) ||
             !permitidos.Contains(nuevoEstado))
             throw new AppException(
-                $"No se puede cambiar de '{order.EstadoPedido}' a '{nuevoEstado}'.");
+                $"No se puede cambiar de '{estadoAnterior}' a '{nuevoEstado}'.");
 
         order.EstadoPedido = nuevoEstado;
         if (!string.IsNullOrWhiteSpace(request.Notas))
             order.Notas = request.Notas;
 
+        // Un pedido web o telefónico llega sin dueño; quien lo saca de
+        // PENDIENTE_VALIDACION es quien lo atendió. Solo se escribe si estaba
+        // vacío: el primero que lo tocó se queda con la atribución.
+        if (order.AtendidoPorUsuarioId is null && restringirAEmpleado.HasValue)
+            order.AtendidoPorUsuarioId = restringirAEmpleado;
+
+        order.ActualizadoEn = DateTime.UtcNow;
         await _context.SaveChangesAsync();
-        _logger.LogInformation("Pedido {Id}: {Anterior} → {Nuevo}", orderId, order.EstadoPedido, nuevoEstado);
+        _logger.LogInformation("Pedido {Id}: {Anterior} → {Nuevo}", orderId, estadoAnterior, nuevoEstado);
+
+        if (nuevoEstado == "ENTREGADO" && order.CustomerId != Guid.Empty)
+        {
+            try
+            {
+                var nombreCliente = order.Customer?.Nombre ?? "Cliente";
+                await _notificaciones.CrearParaClienteAsync(
+                    order.CustomerId,
+                    "PEDIDO_ENTREGADO",
+                    "Tu pedido fue entregado",
+                    $"Hola {nombreCliente}, tu pedido ha sido entregado exitosamente.",
+                    "Order", order.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al notificar PEDIDO_ENTREGADO para pedido {Id}", orderId);
+            }
+        }
+
         return MapToDto(order);
     }
 
     // ── Registrar pago (anticipo / liquidación posterior) ──────────
-    public async Task<OrderResponseDto> RegistrarPagoAsync(Guid orderId, RegisterPaymentRequestDto request)
+    public async Task<OrderResponseDto> RegistrarPagoAsync(
+        Guid orderId, RegisterPaymentRequestDto request, Guid? restringirAEmpleado = null)
     {
+        await AsegurarVisibleAsync(orderId, restringirAEmpleado);
+
         var order = await ObtenerConDetalleAsync(orderId);
 
         if (order.EstadoPedido == "CANCELADO")
@@ -175,7 +240,7 @@ public class OrderService : IOrderService
             Monto     = request.Monto,
             TipoPago  = nuevoSaldo == 0 ? "LIQUIDACION" : "ANTICIPO",
             Metodo    = request.Metodo.Trim().ToUpper(),
-            FechaPago = DateTime.UtcNow,
+            FechaPago = _fechas.AhoraUtc(),
             Estado    = "REGISTRADO"
         };
 
@@ -188,12 +253,31 @@ public class OrderService : IOrderService
         await _context.SaveChangesAsync();
 
         order.SaldoPendiente = nuevoSaldo;
+        order.ActualizadoEn = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
         await tx.CommitAsync();
 
         _logger.LogInformation("Pago registrado: Pedido {Id} | Monto: {Monto} | Saldo restante: {Saldo}",
             orderId, request.Monto, nuevoSaldo);
+
+        if (order.CustomerId != Guid.Empty)
+        {
+            try
+            {
+                var nombreCliente = order.Customer?.Nombre ?? "Cliente";
+                await _notificaciones.CrearParaClienteAsync(
+                    order.CustomerId,
+                    "PAGO_REGISTRADO",
+                    "Pago registrado en tu pedido",
+                    $"Hola {nombreCliente}, se registró un pago de ${request.Monto:N2} en tu pedido. Saldo pendiente: ${nuevoSaldo:N2}.",
+                    "Order", order.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al notificar PAGO_REGISTRADO para pedido {Id}", orderId);
+            }
+        }
 
         return MapToDto(order);
     }
@@ -250,18 +334,134 @@ public class OrderService : IOrderService
         return resultado;
     }
 
+    // ── Admin: delta incremental ─────────────────────────────────
+    public async Task<IndexResultDto<OrderSummaryDto>> ListarDeltaAdminAsync(DateTime desde)
+    {
+        var ahora = DateTime.UtcNow;
+        var items = await _context.Orders
+            .Include(o => o.Customer)
+            .Where(o => o.ActualizadoEn > desde)
+            .OrderByDescending(o => o.FechaCreacion)
+            .Select(o => new OrderSummaryDto
+            {
+                Id            = o.Id,
+                EstadoPedido  = o.EstadoPedido,
+                FechaEntrega  = o.FechaEntrega,
+                Total         = o.Total,
+                NombreCliente = o.Customer.Nombre,
+                FechaCreacion = o.FechaCreacion,
+                Archivado     = o.Archivado
+            })
+            .ToListAsync();
+
+        return new IndexResultDto<OrderSummaryDto>
+        {
+            Items           = items,
+            SincronizadoEn = ahora.ToString("o")
+        };
+    }
+
     // ── Admin: detalle ────────────────────────────────────────────
     public async Task<OrderResponseDto> ObtenerAdminAsync(Guid orderId)
         => MapToDto(await ObtenerConDetalleAsync(orderId));
+
+    // ── Empleado: alcance recortado ───────────────────────────────
+    // Este método NO acepta rango de fechas ni id de empleado desde el request.
+    // Es intencional: el alcance sale del token y del reloj del servidor, así que
+    // no hay parámetro que manipular para ver el día de ayer o las ventas de otro.
+    public async Task<PagedResultDto<OrderSummaryDto>> ListarEmpleadoAsync(
+        Guid usuarioId, string? estado, int page, int size)
+    {
+        var query = QueryVisiblePorEmpleado(usuarioId);
+
+        if (!string.IsNullOrWhiteSpace(estado))
+            query = query.Where(o => o.EstadoPedido == estado.ToUpper());
+
+        return await PaginarAsync(query.OrderByDescending(o => o.FechaCreacion), page, size);
+    }
+
+    public async Task<OrderResponseDto> ObtenerParaEmpleadoAsync(Guid usuarioId, Guid orderId)
+    {
+        // Se comprueba la visibilidad ANTES de cargar el detalle. Si el pedido
+        // existe pero no le toca, la respuesta es 404 y no 403: confirmar que el
+        // id existe ya le diría al empleado algo sobre el trabajo de otro.
+        var visible = await QueryVisiblePorEmpleado(usuarioId).AnyAsync(o => o.Id == orderId);
+        if (!visible) throw new NotFoundException("Pedido", orderId);
+
+        return MapToDto(await ObtenerConDetalleAsync(orderId));
+    }
+
+    /// <summary>
+    /// Los pedidos que un empleado puede ver hoy: los que capturó él durante el
+    /// día, más los que se entregan hoy sin importar quién los capturó.
+    ///
+    /// Lo segundo es lo que hace funcionar las ventas anticipadas: un pedido que
+    /// se tomó la semana pasada tiene que poder moverse a EN_RUTA y ENTREGADO el
+    /// día que toca, y quien lo capturó puede estar descansando. A cambio, un
+    /// empleado ve el pedido ajeno del día — nada más: ni el histórico, ni los
+    /// gastos, ni los cortes de nadie.
+    /// </summary>
+    private IQueryable<Order> QueryVisiblePorEmpleado(Guid usuarioId)
+    {
+        var scope = EmployeeScope.DeHoy(usuarioId, _fechas);
+
+        return _context.Orders
+            .Include(o => o.Customer)
+            .Where(o => !o.Archivado)
+            .Where(o => (o.AtendidoPorUsuarioId == usuarioId &&
+                         o.FechaCreacion >= scope.InicioUtc &&
+                         o.FechaCreacion <  scope.FinUtc)
+                     || o.FechaEntrega == scope.Dia);
+    }
+
+    /// <summary>
+    /// Corta el paso si el pedido cae fuera del alcance del empleado. Responde
+    /// "no encontrado" en vez de "no autorizado" a propósito: decir que el id
+    /// existe ya es información sobre el trabajo de otro.
+    /// </summary>
+    private async Task AsegurarVisibleAsync(Guid orderId, Guid? restringirAEmpleado)
+    {
+        if (!restringirAEmpleado.HasValue) return;
+
+        var visible = await QueryVisiblePorEmpleado(restringirAEmpleado.Value)
+            .AnyAsync(o => o.Id == orderId);
+
+        if (!visible) throw new NotFoundException("Pedido", orderId);
+    }
 
     // ── Helpers ───────────────────────────────────────────────────
     private async Task<OrderResponseDto> CrearPedidoAsync(
         Customer customer, string canal, string tipo,
         DateOnly fechaEntrega, TimeOnly? horaEntrega,
         DireccionDto? direccion, List<OrderItemRequestDto> items, string? notas,
-        bool entregaInmediata = false,
-        decimal? montoPagado = null, string? metodoPago = null, decimal? costoEnvio = null)
+        bool entregaInmediata = false, Guid? atendidoPorUsuarioId = null,
+        decimal? montoPagado = null, string? metodoPago = null, decimal? costoEnvio = null,
+        string? codigoCupon = null, Guid? idLocalOffline = null)
     {
+        var usarPricing = canal == "WEB";
+        Models.DTOs.Promotions.PricingBreakdownDto? breakdown = null;
+        Dictionary<Guid, decimal>? preciosOferta = null;
+
+        if (usarPricing)
+        {
+            var pricingItems = items.Select(i => new Models.DTOs.Promotions.PricingItemDto
+            {
+                ProductId = i.ProductId,
+                Cantidad  = i.Cantidad
+            }).ToList();
+
+            breakdown = await _pricing.CalcularTotalAsync(pricingItems, codigoCupon);
+
+            var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+            var productIds = items.Select(i => i.ProductId).Distinct().ToList();
+            preciosOferta = await _context.Ofertas
+                .Where(o => o.Activo
+                    && productIds.Contains(o.ProductoId)
+                    && (!o.FechaInicio.HasValue || o.FechaInicio <= hoy)
+                    && (!o.FechaFin.HasValue    || o.FechaFin   >= hoy))
+                .ToDictionaryAsync(o => o.ProductoId, o => o.PrecioOferta);
+        }
+
         decimal total = costoEnvio ?? 0;
         var orderItems = new List<OrderItem>();
 
@@ -272,15 +472,24 @@ public class OrderService : IOrderService
             if (product.Estado != "ACTIVO")
                 throw new AppException($"El producto '{product.Nombre}' no está disponible.");
 
-            total += product.PrecioBase * item.Cantidad;
+            var precioUnitario = product.PrecioBase;
+            if (preciosOferta != null && preciosOferta.TryGetValue(item.ProductId, out var precioOft))
+                precioUnitario = precioOft;
+
+            if (!usarPricing)
+                total += product.PrecioBase * item.Cantidad;
+
             orderItems.Add(new OrderItem
             {
                 Id             = Guid.NewGuid(),
                 ProductId      = product.Id,
                 Cantidad       = item.Cantidad,
-                PrecioUnitario = product.PrecioBase
+                PrecioUnitario = precioUnitario
             });
         }
+
+        if (usarPricing)
+            total += breakdown!.Total;
 
         // Cuánto se cobra al crear el pedido: si no se especifica un monto,
         // una venta instantánea de mostrador se asume pagada en su totalidad
@@ -304,13 +513,14 @@ public class OrderService : IOrderService
         var order = new Order
         {
             Id                          = Guid.NewGuid(),
+            IdLocalOffline              = idLocalOffline,
+            SincronizadoEn              = idLocalOffline.HasValue ? _fechas.AhoraUtc() : null,
             CustomerId                  = customer.Id,
             TipoPedido                  = tipo.ToUpper(),
             Canal                       = canal,
-            // Una venta instantánea de mostrador se paga y se entrega ahí mismo:
-            // no pasa por preparación ni ruta de entrega.
+            AtendidoPorUsuarioId        = atendidoPorUsuarioId,
             EstadoPedido                = entregaInmediata ? "ENTREGADO" : "PENDIENTE_VALIDACION",
-            FechaCreacion               = DateTime.UtcNow,
+            FechaCreacion               = _fechas.AhoraUtc(),
             FechaEntrega                = fechaEntrega,
             HoraEntrega                 = horaEntrega,
             Total                       = total,
@@ -327,6 +537,52 @@ public class OrderService : IOrderService
 
         foreach (var oi in orderItems) { oi.OrderId = order.Id; order.OrderItems.Add(oi); }
 
+        // ── SALIDA inmediata: venta de mostrador ──────────────────
+        // Cuando la venta es instantánea de mostrador (entregaInmediata),
+        // se descuenta el inventario de la flor primaria de cada producto
+        // en el momento de la venta — sin reserva. Si un producto no tiene
+        // receta con flor primaria configurada, no se bloquea la venta:
+        // se registra el pedido igual y se loguea una advertencia.
+        if (entregaInmediata && atendidoPorUsuarioId.HasValue)
+        {
+            foreach (var oi in orderItems)
+            {
+                var receta = await _context.ProductRecipes
+                    .Include(r => r.InventoryItem)
+                    .Where(r => r.ProductId == oi.ProductId && r.InventoryItem.EsFlorPrimaria)
+                    .FirstOrDefaultAsync();
+
+                if (receta == null)
+                {
+                    _logger.LogWarning(
+                        "Producto {ProductId} sin receta con flor primaria — " +
+                        "se omite descuento de inventario en venta de mostrador.",
+                        oi.ProductId);
+                    continue;
+                }
+
+                var cantidadSalida = receta.CantidadRequerida * oi.Cantidad;
+                receta.InventoryItem.StockActual -= cantidadSalida;
+
+                _context.InventoryMovements.Add(new InventoryMovement
+                {
+                    Id              = Guid.NewGuid(),
+                    InventoryItemId = receta.InventoryItemId,
+                    TipoMovimiento  = "SALIDA",
+                    Cantidad        = cantidadSalida,
+                    Motivo          = $"Venta de mostrador — Pedido {order.Id}",
+                    MotivoCategoria = "VENTA",
+                    UsuarioId       = atendidoPorUsuarioId.Value,
+                    FechaHora       = _fechas.AhoraUtc()
+                });
+
+                _logger.LogInformation(
+                    "Inventario: SALIDA {Cantidad} de '{Insumo}' (producto {ProductId}) — " +
+                    "venta de mostrador pedido {OrderId}",
+                    cantidadSalida, receta.InventoryItem.Nombre, oi.ProductId, order.Id);
+            }
+        }
+
         if (pagado > 0 && !string.IsNullOrWhiteSpace(metodoUsado))
         {
             order.Payments.Add(new Payment
@@ -336,14 +592,53 @@ public class OrderService : IOrderService
                 Monto     = pagado,
                 TipoPago  = pagado >= total ? "TOTAL" : "ANTICIPO",
                 Metodo    = metodoUsado.Trim().ToUpper(),
-                FechaPago = DateTime.UtcNow,
+                FechaPago = _fechas.AhoraUtc(),
                 Estado    = "REGISTRADO"
             });
         }
 
+        order.ActualizadoEn = DateTime.UtcNow;
         _context.Orders.Add(order);
         await _context.SaveChangesAsync();
         _logger.LogInformation("Pedido creado: {Id} | Total: {Total} | Pagado: {Pagado}", order.Id, total, pagado);
+
+        if (!string.IsNullOrWhiteSpace(codigoCupon))
+        {
+            var filas = await _context.Database.ExecuteSqlRawAsync(
+                "UPDATE promotions SET usos_actuales = usos_actuales + 1 " +
+                "WHERE UPPER(codigo) = {0} AND (max_usos IS NULL OR usos_actuales < max_usos)",
+                codigoCupon.Trim().ToUpper());
+            if (filas > 0)
+                _logger.LogInformation("Cupón {Codigo} usado en pedido {Id}", codigoCupon, order.Id);
+        }
+
+        // SignalR: notificar a empleados sobre el pedido nuevo
+        var direccionTexto = string.IsNullOrWhiteSpace(order.DireccionEntregaCalle)
+            ? null
+            : $"{order.DireccionEntregaCalle}, {order.DireccionEntregaColonia}".TrimEnd(',', ' ');
+        var notifPedido = new PedidoNuevoNotificacion
+        {
+            OrderId       = order.Id,
+            NombreCliente = $"{customer.Nombre} {customer.Apellido}".Trim(),
+            TipoPedido    = order.TipoPedido,
+            FechaEntrega  = order.FechaEntrega.ToString("yyyy-MM-dd"),
+            HoraEntrega   = order.HoraEntrega?.ToString("HH:mm"),
+            Direccion     = direccionTexto,
+            Total         = order.Total,
+            Notas         = order.Notas,
+            EsInstantanea = entregaInmediata,
+        };
+
+        // Pedido anticipado >= 7 dias: informativo al admin, sin modal bloqueante
+        if (tipo.Equals("ANTICIPADO", StringComparison.OrdinalIgnoreCase)
+            && fechaEntrega >= DateOnly.FromDateTime(_fechas.AhoraUtc()).AddDays(7))
+        {
+            await _realtime.PedidoAnticipadoInformativoAsync(notifPedido);
+        }
+        else
+        {
+            await _realtime.PedidoNuevoAsync(notifPedido);
+        }
 
         return MapToDto(await ObtenerConDetalleAsync(order.Id));
     }

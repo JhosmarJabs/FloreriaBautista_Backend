@@ -61,7 +61,8 @@ public class AdminBackupsController : ControllerBase
         if (usuarioId == null)
             return Unauthorized(ApiResponseDto<object>.Fail("No se pudo identificar al usuario."));
 
-        var resultado = await _backupService.CrearBackupFullAsync(request?.Descripcion, usuarioId.Value, request?.Formato ?? "BACKUP");
+        var resultado = await _backupService.CrearBackupFullAsync(
+            request?.Descripcion, usuarioId.Value, request?.Formato ?? "BACKUP", request?.Destino ?? "DRIVE");
 
         await _audit.RegistrarAsync("BACKUP_FULL", "BackupJob", resultado.Id.ToString(), usuarioId,
             new { resultado.RutaArchivoLocal, resultado.Estado, resultado.SubidoADrive, resultado.Descripcion });

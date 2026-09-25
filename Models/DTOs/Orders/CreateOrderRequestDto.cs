@@ -12,6 +12,8 @@ public class CreateOrderRequestDto
     [Range(0, double.MaxValue)]
     public decimal?            CostoEnvio   { get; set; }
 
+    public string?             CodigoCupon { get; set; }
+
     [Required] public DireccionDto Direccion { get; set; } = null!;
     [Required] [MinLength(1)]
     public List<OrderItemRequestDto> Items   { get; set; } = [];
@@ -40,6 +42,8 @@ public class CreatePhysicalOrderRequestDto
     // Costo de envío a domicilio (null/0 si el cliente recoge en sucursal).
     [Range(0, double.MaxValue)]
     public decimal?            CostoEnvio   { get; set; }
+    // UUID generado en el cliente para deduplicación offline-first.
+    public Guid?               IdLocalOffline { get; set; }
 }
 
 public class DireccionDto

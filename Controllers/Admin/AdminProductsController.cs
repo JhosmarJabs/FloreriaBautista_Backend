@@ -23,15 +23,33 @@ public class AdminProductsController : ControllerBase
         return Ok(ApiResponseDto<ProductKpisDto>.Ok(kpis));
     }
 
+    // GET /api/admin/products/index — lectura completa para el front en memoria
+    [HttpGet("index")]
+    public async Task<IActionResult> Indice()
+    {
+        var resultado = await _productService.ListarIndiceAsync();
+        return Ok(ApiResponseDto<IndexResultDto<ProductIndexDto>>.Ok(resultado));
+    }
+
+    // GET /api/admin/products/delta?desde=<ISO-8601> — solo lo cambiado
+    [HttpGet("delta")]
+    public async Task<IActionResult> Delta([FromQuery] DateTime desde)
+    {
+        var resultado = await _productService.ListarDeltaAsync(desde);
+        return Ok(ApiResponseDto<IndexResultDto<ProductIndexDto>>.Ok(resultado));
+    }
+
     // GET /api/admin/products?busqueda=&estado=ACTIVO&page=1&size=20
     [HttpGet]
     public async Task<IActionResult> Listar(
         [FromQuery] string? busqueda,
         [FromQuery] string? estado,
         [FromQuery] int page = 1,
-        [FromQuery] int size = 20)
+        [FromQuery] int size = 20,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool? soloReales = null)
     {
-        var resultado = await _productService.ListarAdminAsync(busqueda, estado, page, size);
+        var resultado = await _productService.ListarAdminAsync(busqueda, estado, page, size, sortBy, soloReales);
         return Ok(ApiResponseDto<PagedResultDto<ProductSummaryDto>>.Ok(resultado));
     }
 

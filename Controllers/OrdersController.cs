@@ -1,3 +1,4 @@
+using FloreriaBautista.Extensions;
 using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Models.DTOs.Orders;
 using FloreriaBautista.Services.Interfaces;
@@ -30,7 +31,9 @@ public class OrdersController : ControllerBase
     [Authorize(Roles = "ADMIN,EMPLEADO")]
     public async Task<IActionResult> CrearFisico([FromBody] CreatePhysicalOrderRequestDto request)
     {
-        var order = await _orderService.CrearPedidoFisicoAsync(request);
+        // La venta queda atribuida a quien la captura. Es lo que hace que el
+        // empleado la vea en su día y que su corte de caja la cuente.
+        var order = await _orderService.CrearPedidoFisicoAsync(request, User.UsuarioId());
         return Ok(ApiResponseDto<OrderResponseDto>.Ok(order, "Pedido físico creado correctamente."));
     }
 
@@ -61,7 +64,10 @@ public class OrdersController : ControllerBase
     {
         var roles = User.FindAll(System.Security.Claims.ClaimTypes.Role)
             .Select(c => c.Value).ToList();
-        var order = await _orderService.CambiarEstadoAsync(orderId, request, roles);
+
+        // El admin mueve cualquier pedido; el empleado, solo los de su día.
+        var order = await _orderService.CambiarEstadoAsync(
+            orderId, request, roles, RestriccionDelEmpleado());
         return Ok(ApiResponseDto<OrderResponseDto>.Ok(order, "Pedido actualizado (estado)."));
     }
 
@@ -70,14 +76,15 @@ public class OrdersController : ControllerBase
     [Authorize(Roles = "ADMIN,EMPLEADO")]
     public async Task<IActionResult> RegistrarPago(Guid orderId, [FromBody] RegisterPaymentRequestDto request)
     {
-        var order = await _orderService.RegistrarPagoAsync(orderId, request);
+        var order = await _orderService.RegistrarPagoAsync(orderId, request, RestriccionDelEmpleado());
         return Ok(ApiResponseDto<OrderResponseDto>.Ok(order, "Pago registrado correctamente."));
     }
 
-    private Guid? ObtenerUsuarioId()
-    {
-        var claim = User.FindFirst("sub")?.Value
-            ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        return Guid.TryParse(claim, out var id) ? id : null;
-    }
+    private Guid? ObtenerUsuarioId() => User.UsuarioId();
+
+    /// <summary>
+    /// Null para el admin (sin restricción), su propio id para el empleado.
+    /// </summary>
+    private Guid? RestriccionDelEmpleado()
+        => User.EsAdmin() ? null : User.UsuarioIdRequerido();
 }

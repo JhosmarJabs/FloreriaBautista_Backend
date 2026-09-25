@@ -9,7 +9,9 @@ public interface IProductService
     Task<PagedResultDto<ProductSummaryDto>> ListarParaEmpleadoAsync(string? busqueda, string? categoria, string? catalogo, int page, int size);
     Task<ProductResponseDto>               ObtenerPublicoAsync(Guid id);
     Task<ProductResponseDto>               ObtenerAdminAsync(Guid id);
-    Task<PagedResultDto<ProductSummaryDto>> ListarAdminAsync(string? busqueda, string? estado, int page, int size);
+    Task<PagedResultDto<ProductSummaryDto>> ListarAdminAsync(string? busqueda, string? estado, int page, int size, string? sortBy = null, bool? soloReales = null);
+    Task<IndexResultDto<ProductIndexDto>>   ListarIndiceAsync();
+    Task<IndexResultDto<ProductIndexDto>>   ListarDeltaAsync(DateTime desde);
     Task<ProductResponseDto>               CrearAsync(CreateProductRequestDto request);
     Task<ProductResponseDto>               ActualizarAsync(Guid id, UpdateProductRequestDto request);
     Task                                   EliminarAsync(Guid id);

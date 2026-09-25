@@ -27,6 +27,10 @@ public class SiteSettings
     // ── Productos destacados (JSON: ["nombre1","nombre2"]) ───────────
     public string  DestacadosJson  { get; set; } = "[]";
 
+    // ── Geolocalización de la sucursal ───────────────────────────────
+    public decimal? Latitud         { get; set; }
+    public decimal? Longitud        { get; set; }
+
     // ── Anuncio global ────────────────────────────────────────────────
     public string  AnuncioTexto    { get; set; } = string.Empty;
     public bool    AnuncioActivo   { get; set; } = false;

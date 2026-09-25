@@ -10,6 +10,8 @@ using FloreriaBautista.Services;
 using FloreriaBautista.Services.Audit;
 using FloreriaBautista.Services.ImportExport;
 using FloreriaBautista.Services.Reports;
+using FloreriaBautista.Services.Notifications;
+using FloreriaBautista.Services.Realtime;
 using FloreriaBautista.Services.Recommendations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -56,9 +58,31 @@ public static class ServiceExtensions
                     IssuerSigningKey         = new SymmetricSecurityKey(
                         Encoding.UTF8.GetBytes(Env("JWT_KEY")))
                 };
+
+                // SignalR no puede enviar headers en WebSocket; el token
+                // viaja como query string ?access_token=…
+                opt.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
+                    {
+                        var accessToken = context.Request.Query["access_token"];
+                        var path = context.HttpContext.Request.Path;
+                        if (!string.IsNullOrEmpty(accessToken)
+                            && path.StartsWithSegments("/hubs"))
+                        {
+                            context.Token = accessToken;
+                        }
+                        return Task.CompletedTask;
+                    }
+                };
             });
 
         services.AddAuthorization();
+
+        // ── SignalR (tiempo real) ─────────────────────────────────
+        services.AddSignalR();
+        services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<IRealtimeNotifier, RealtimeNotifier>();
 
         services.AddCors(opt =>
             opt.AddPolicy("AllowFrontend", p =>
@@ -68,6 +92,7 @@ public static class ServiceExtensions
 
         // ── Servicios de backups ───────────────────────────────────
         services.AddScoped<GoogleDriveService>();
+        services.AddScoped<CloudinaryBackupService>();
         services.AddScoped<IBackupService, BackupService>();
 
         // ── Servicios de base de datos ─────────────────────────────
@@ -89,7 +114,13 @@ public static class ServiceExtensions
         // endpoint manual), el hosted service solo la dispara cada hora.
         services.AddScoped<IOrderArchiver, OrderArchiver>();
         services.AddHostedService<OrderArchiverService>();
+        // El expirador de solicitudes instantaneas: misma estructura que el
+        // archivador. La regla es scoped (scheduler + endpoint manual), el
+        // hosted service la dispara cada 30 s.
+        services.AddScoped<IInstantSaleExpirer, InstantSaleExpirer>();
+        services.AddHostedService<InstantSaleExpirerService>();
         services.AddHostedService<PredictiveModelsSchedulerService>();
+        services.AddHostedService<AuthTokenCleanupService>();
 
         // TODO: Registrar aquí los demás módulos
         services.AddScoped<IAuditService, AuditService>();
@@ -100,6 +131,15 @@ public static class ServiceExtensions
         services.AddScoped<IImportService, ImportService>();
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<IOrderService, OrderService>();
+        services.AddScoped<IPricingService, PricingService>();
+        services.AddScoped<IInstantSaleService, InstantSaleService>();
+
+        // ── Alcance del empleado (app móvil interna) ───────────────
+        // El aislamiento por empleado y por día vive dentro de estos servicios,
+        // no en los controllers: así ninguna ruta nueva puede olvidarse de él.
+        services.AddScoped<IEmployeeExpenseService, Services.Employee.EmployeeExpenseService>();
+        services.AddScoped<ICashCutService,         Services.Employee.CashCutService>();
+        services.AddScoped<IErrorReportService,     Services.Employee.ErrorReportService>();
         services.AddScoped<IInventoryService, InventoryService>();
         services.AddScoped<ISupplyOrderService, SupplyOrderService>();
         services.AddScoped<ReportsService>();

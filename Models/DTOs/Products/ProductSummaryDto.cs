@@ -10,4 +10,5 @@ public class ProductSummaryDto
     public string? ImagenUrl { get; set; }
     public bool    Activo    { get; set; }
     public int?    Stock     { get; set; }
+    public bool    EsReal    { get; set; }
 }

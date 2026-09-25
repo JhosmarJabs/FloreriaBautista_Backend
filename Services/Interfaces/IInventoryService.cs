@@ -6,6 +6,8 @@ namespace FloreriaBautista.Services.Interfaces;
 public interface IInventoryService
 {
     Task<PagedResultDto<InventoryItemDto>>     ListarAsync(string? sucursal, bool? bajoMinimo, string? busqueda, int page, int size);
+    Task<IndexResultDto<InventoryIndexDto>>    ListarIndiceAsync();
+    Task<IndexResultDto<InventoryIndexDto>>    ListarDeltaAsync(DateTime desde);
     Task<InventoryItemDto>                     ObtenerAsync(Guid id);
     Task<InventoryItemDto>                     CrearAsync(CreateInventoryItemDto request);
     Task<InventoryItemDto>                     ActualizarAsync(Guid id, UpdateInventoryItemDto request);

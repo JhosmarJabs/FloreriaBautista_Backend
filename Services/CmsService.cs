@@ -34,6 +34,8 @@ public class CmsService
         settings.BannerCta       = request.BannerCta ?? settings.BannerCta;
         settings.HorariosJson    = JsonSerializer.Serialize(request.Horarios ?? []);
         settings.DestacadosJson  = JsonSerializer.Serialize(request.Destacados ?? []);
+        settings.Latitud         = request.Latitud ?? settings.Latitud;
+        settings.Longitud        = request.Longitud ?? settings.Longitud;
         settings.AnuncioTexto    = request.AnuncioTexto ?? settings.AnuncioTexto;
         settings.AnuncioActivo   = request.AnuncioActivo;
         settings.ActualizadoEn   = DateTime.UtcNow;
@@ -65,6 +67,8 @@ public class CmsService
         BannerCta       = s.BannerCta,
         Horarios        = string.IsNullOrWhiteSpace(s.HorariosJson) ? [] : JsonSerializer.Deserialize<List<HorarioDto>>(s.HorariosJson) ?? [],
         Destacados      = string.IsNullOrWhiteSpace(s.DestacadosJson) ? [] : JsonSerializer.Deserialize<List<string>>(s.DestacadosJson) ?? [],
+        Latitud         = s.Latitud,
+        Longitud        = s.Longitud,
         AnuncioTexto    = s.AnuncioTexto,
         AnuncioActivo   = s.AnuncioActivo
     };

@@ -17,7 +17,12 @@ public class BackupResponseDto
     public long?   TamanoBytes      { get; set; }
 
     // ── Google Drive ───────────────────────────────────────────────
-    public string? DriveFileId   { get; set; }   // ID en Drive
-    public string? DriveEnlace   { get; set; }   // URL para ver/descargar desde Drive
+    public string? DriveFileId   { get; set; }
+    public string? DriveEnlace   { get; set; }
     public bool    SubidoADrive  { get; set; } = false;
+
+    // ── Cloudinary ────────────────────────────────────────────────
+    public string? CloudinaryPublicId { get; set; }
+    public string? CloudinaryEnlace   { get; set; }
+    public bool    SubidoACloudinary  { get; set; } = false;
 }

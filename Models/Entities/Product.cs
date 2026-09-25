@@ -12,6 +12,9 @@ public class Product
     public string   Visibilidad      { get; set; } = "AMBOS"; // WEB / SOLO_SUCURSAL / AMBOS
     public string?  ImagenUrl        { get; set; }
     public bool     Activo           { get; set; } = true;
+    public bool     EsReal           { get; set; } = true;
+    public bool     PermiteVentaInstantanea { get; set; } = false;
+    public int?     LimiteVentaInstantanea  { get; set; }
     public DateTime CreadoEn         { get; set; } = DateTime.UtcNow;
     public DateTime ActualizadoEn    { get; set; } = DateTime.UtcNow;
 

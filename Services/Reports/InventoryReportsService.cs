@@ -231,9 +231,14 @@ public class InventoryReportsService
 
     // ── Merma y caducidad ─────────────────────────────────────────
     /// <summary>
-    /// Merma = pérdida provocada por un AJUSTE que bajó el stock. Se reconstruye
-    /// el saldo previo de cada insumo para saber cuántas unidades desaparecieron;
-    /// la columna Cantidad del AJUSTE por sí sola no lo dice.
+    /// Merma tiene dos orígenes desde que InventoryService recalibra rendimiento/factor
+    /// de merma (ver RegistrarMovimientoAsync):
+    ///  1. Inferida: un AJUSTE que bajó el stock (conteo físico o corrección manual).
+    ///     Se reconstruye el saldo previo del insumo para saber cuántas unidades
+    ///     desaparecieron; la columna Cantidad del AJUSTE por sí sola no lo dice.
+    ///  2. Explícita: una SALIDA categorizada MANIPULACION (la merma automática que
+    ///     acompaña a un consumo normal) o CADUCIDAD (cierre de perecederos). Aquí no
+    ///     hay que reconstruir nada: la Cantidad de la SALIDA ya es la pérdida.
     /// </summary>
     public async Task<WasteReportDto> MermaAsync(ReportPeriod p, ReportGranularity granularidad)
     {
@@ -244,12 +249,23 @@ public class InventoryReportsService
             .Distinct()
             .ToListAsync();
 
+        var salidasMerma = await _context.InventoryMovements
+            .Where(m => m.TipoMovimiento == "SALIDA" &&
+                        (m.MotivoCategoria == "MANIPULACION" || m.MotivoCategoria == "CADUCIDAD") &&
+                        m.FechaHora >= p.DesdeUtc && m.FechaHora < p.HastaUtcExclusivo)
+            .Select(m => new
+            {
+                m.InventoryItemId, m.Cantidad, m.FechaHora, m.MotivoCategoria,
+                m.InventoryItem.Nombre, m.InventoryItem.UnidadMedida, m.InventoryItem.PrecioCosto
+            })
+            .ToListAsync();
+
         var reporte = new WasteReportDto
         {
             Serie = ReportAggregation.Serie(p, granularidad, [])
         };
 
-        if (itemsConAjuste.Count == 0)
+        if (itemsConAjuste.Count == 0 && salidasMerma.Count == 0)
         {
             reporte.PorcentajeSobreConsumo = null;
             return reporte;
@@ -306,9 +322,47 @@ public class InventoryReportsService
             }
         }
 
-        // Referencia contra la que se mide: valor de todo lo que salió a producción.
+        // Fusiona la merma explícita (manipulación/caducidad) con la inferida por AJUSTE.
+        foreach (var grupo in salidasMerma.GroupBy(s => s.InventoryItemId))
+        {
+            var primero = grupo.First();
+
+            foreach (var s in grupo)
+                perdidas.Add((ReportPeriod.ALocal(s.FechaHora), s.Cantidad,
+                              Math.Round(s.Cantidad * s.PrecioCosto, 2),
+                              s.MotivoCategoria == "CADUCIDAD" ? "CADUCIDAD" : "MANIPULACIÓN",
+                              s.InventoryItemId));
+
+            var unidadesGrupo = grupo.Sum(s => s.Cantidad);
+            var valorGrupo    = Math.Round(grupo.Sum(s => s.Cantidad * s.PrecioCosto), 2);
+
+            var existente = porInsumo.FirstOrDefault(w => w.InventoryItemId == grupo.Key);
+            if (existente != null)
+            {
+                existente.Unidades += unidadesGrupo;
+                existente.Valor    += valorGrupo;
+                existente.Eventos  += grupo.Count();
+            }
+            else
+            {
+                porInsumo.Add(new WasteItemDto
+                {
+                    InventoryItemId = grupo.Key,
+                    Nombre          = primero.Nombre,
+                    UnidadMedida    = primero.UnidadMedida,
+                    Unidades        = unidadesGrupo,
+                    Valor           = valorGrupo,
+                    Eventos         = grupo.Count()
+                });
+            }
+        }
+
+        // Referencia contra la que se mide: valor del consumo genuino del periodo. Se
+        // excluye la merma explícita (MANIPULACION/CADUCIDAD): ya se cuenta como
+        // pérdida arriba, no como producción real, o el % de merma saldría subestimado.
         var valorConsumo = await _context.InventoryMovements
             .Where(m => m.TipoMovimiento == "SALIDA" &&
+                        m.MotivoCategoria != "MANIPULACION" && m.MotivoCategoria != "CADUCIDAD" &&
                         m.FechaHora >= p.DesdeUtc && m.FechaHora < p.HastaUtcExclusivo)
             .SumAsync(m => (decimal?)(m.Cantidad * m.InventoryItem.PrecioCosto)) ?? 0m;
 

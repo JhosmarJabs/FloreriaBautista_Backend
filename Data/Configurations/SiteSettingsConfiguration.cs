@@ -23,6 +23,8 @@ public class SiteSettingsConfiguration : IEntityTypeConfiguration<SiteSettings>
         builder.Property(s => s.BannerCta).HasMaxLength(60);
         builder.Property(s => s.HorariosJson).HasColumnType("text").HasDefaultValue("[]");
         builder.Property(s => s.DestacadosJson).HasColumnType("text").HasDefaultValue("[]");
+        builder.Property(s => s.Latitud).HasColumnType("numeric(10,7)");
+        builder.Property(s => s.Longitud).HasColumnType("numeric(10,7)");
         builder.Property(s => s.AnuncioTexto).HasMaxLength(255);
         builder.Property(s => s.ActualizadoEn).HasDefaultValueSql("NOW()");
     }

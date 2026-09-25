@@ -34,10 +34,12 @@ public class TokenService : ITokenService
             new Claim("fullName", user.Nombre)
         };
 
+        var minutes = int.TryParse(_config["Jwt:AccessTokenExpirationMinutes"], out var m) ? m : 60;
+
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
-            Expires = DateTime.UtcNow.AddDays(7), // FIX: Usar UtcNow (Resuelve Security Hotspot)
+            Expires = DateTime.UtcNow.AddMinutes(minutes),
             SigningCredentials = creds,
             Issuer = _config["Jwt:Issuer"],
             Audience = _config["Jwt:Audience"]

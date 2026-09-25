@@ -9,8 +9,9 @@ public class BackupJob
     public string?   NombreTabla  { get; set; }
     public string?   Descripcion  { get; set; }
     public string    Formato      { get; set; } = "BACKUP"; // BACKUP | SQL
-    public string?   DriveFileId  { get; set; }
-    public long?     TamanoBytes  { get; set; }
+    public string?   DriveFileId        { get; set; }
+    public string?   CloudinaryPublicId { get; set; }
+    public long?     TamanoBytes        { get; set; }
     public DateTime  CreadoEn     { get; set; } = DateTime.UtcNow;
     public DateTime? CompletadoEn { get; set; }
     public string?   MensajeError { get; set; }

@@ -104,6 +104,7 @@ public class AdminUsersController : ControllerBase
                 Sexo             = u.Sexo,
                 Estado           = u.Estado,
                 CorreoVerificado = u.CorreoVerificado,
+                EsResponsableTurno = u.EsResponsableTurno,
                 Roles            = u.UserRoles.Select(ur => ur.Role.Nombre).ToList(),
                 CreadoEn         = u.CreadoEn
             })
@@ -142,9 +143,98 @@ public class AdminUsersController : ControllerBase
             FechaNacimiento  = user.FechaNacimiento,
             Estado           = user.Estado,
             CorreoVerificado = user.CorreoVerificado,
+            EsResponsableTurno = user.EsResponsableTurno,
             Roles            = user.UserRoles.Select(ur => ur.Role.Nombre).ToList(),
             CreadoEn         = user.CreadoEn
         }));
+    }
+
+    // ── Responsable de turno ───────────────────────────────────────
+
+    // GET /api/admin/users/responsable-turno — devuelve el usuario actual o null
+    [HttpGet("responsable-turno")]
+    public async Task<IActionResult> ObtenerResponsableTurno()
+    {
+        var user = await _context.Users
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+            .FirstOrDefaultAsync(u => u.EsResponsableTurno);
+
+        if (user == null)
+            return Ok(ApiResponseDto<UserProfileDto>.Ok(null!, "No hay responsable de turno asignado."));
+
+        return Ok(ApiResponseDto<UserProfileDto>.Ok(new UserProfileDto
+        {
+            Id               = user.Id,
+            Nombre           = user.Nombre,
+            Apellido         = user.Apellido,
+            Correo           = user.Correo,
+            Telefono         = user.Telefono,
+            Estado           = user.Estado,
+            Roles            = user.UserRoles.Select(ur => ur.Role.Nombre).ToList(),
+            CreadoEn         = user.CreadoEn
+        }));
+    }
+
+    // POST /api/admin/users/{userId}/responsable-turno — asignar privilegio
+    [HttpPost("{userId:guid}/responsable-turno")]
+    public async Task<IActionResult> AsignarResponsableTurno(Guid userId)
+    {
+        var user = await _context.Users
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+            .FirstOrDefaultAsync(u => u.Id == userId);
+
+        if (user == null)
+            return NotFound(ApiResponseDto<object>.Fail($"Usuario '{userId}' no encontrado."));
+
+        // Validar que el usuario este activo
+        if (user.Estado != "ACTIVO")
+            return BadRequest(ApiResponseDto<object>.Fail("Solo se puede asignar el privilegio a un usuario con estado ACTIVO."));
+
+        // Validar que tenga rol EMPLEADO (no ADMIN ni CLIENTE)
+        var tieneRolEmpleado = user.UserRoles.Any(ur => ur.Role.Nombre == "EMPLEADO");
+        if (!tieneRolEmpleado)
+            return BadRequest(ApiResponseDto<object>.Fail("Solo un usuario con rol EMPLEADO puede ser responsable de turno."));
+
+        // En una sola transaccion: quitar al anterior y asignar al nuevo
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            // Quitar privilegio al responsable actual (si existe)
+            var anterior = await _context.Users.FirstOrDefaultAsync(u => u.EsResponsableTurno && u.Id != userId);
+            if (anterior != null)
+            {
+                anterior.EsResponsableTurno = false;
+                anterior.ActualizadoEn = DateTime.UtcNow;
+            }
+
+            user.EsResponsableTurno = true;
+            user.ActualizadoEn = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+
+        return Ok(ApiResponseDto<object>.Ok(null, $"'{user.Nombre} {user.Apellido}' es ahora el responsable de turno."));
+    }
+
+    // DELETE /api/admin/users/responsable-turno — quitar privilegio
+    [HttpDelete("responsable-turno")]
+    public async Task<IActionResult> QuitarResponsableTurno()
+    {
+        var actual = await _context.Users.FirstOrDefaultAsync(u => u.EsResponsableTurno);
+        if (actual == null)
+            return Ok(ApiResponseDto<object>.Ok(null, "No habia responsable de turno asignado."));
+
+        actual.EsResponsableTurno = false;
+        actual.ActualizadoEn = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return Ok(ApiResponseDto<object>.Ok(null, "Privilegio de responsable de turno retirado."));
     }
 
     // POST /api/admin/users/{userId:guid} — actualizar perfil, estado y roles (Admin)

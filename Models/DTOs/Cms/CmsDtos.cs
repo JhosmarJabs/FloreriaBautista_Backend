@@ -23,6 +23,8 @@ public class SiteSettingsDto
     public string    BannerCta       { get; set; } = string.Empty;
     public List<HorarioDto> Horarios { get; set; } = [];
     public List<string>     Destacados { get; set; } = [];
+    public decimal?  Latitud         { get; set; }
+    public decimal?  Longitud        { get; set; }
     public string    AnuncioTexto    { get; set; } = string.Empty;
     public bool      AnuncioActivo   { get; set; } = false;
 }

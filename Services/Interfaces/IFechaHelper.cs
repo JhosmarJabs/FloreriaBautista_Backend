@@ -15,6 +15,14 @@ public interface IFechaHelper
     /// <summary>Fecha y hora actuales en la zona de la tienda.</summary>
     DateTime AhoraLocal();
 
+    /// <summary>
+    /// Instante actual en UTC, del mismo reloj que <see cref="HoyLocal"/>. Lo que
+    /// se persiste debe salir de aquí y no de <c>DateTime.UtcNow</c>: si el sello
+    /// de un registro viene de un reloj y el filtro "de hoy" de otro, los dos
+    /// pueden discrepar y el registro recién creado queda fuera de su propio día.
+    /// </summary>
+    DateTime AhoraUtc();
+
     /// <summary>Día de calendario en curso para la tienda.</summary>
     DateOnly HoyLocal();
 

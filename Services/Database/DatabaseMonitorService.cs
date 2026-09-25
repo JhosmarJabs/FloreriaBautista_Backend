@@ -155,7 +155,8 @@ public class DatabaseMonitorService : IDatabaseMonitorService
             return [new QueryLentoDto
             {
                 Query = "Extensión pg_stat_statements no habilitada. " +
-                        "Agrégala en postgresql.conf: shared_preload_libraries = 'pg_stat_statements'",
+                        "Ejecuta: CREATE EXTENSION IF NOT EXISTS pg_stat_statements; " +
+                        "(en Neon no se edita postgresql.conf)",
                 BaseDatos = "N/A"
             }];
         }

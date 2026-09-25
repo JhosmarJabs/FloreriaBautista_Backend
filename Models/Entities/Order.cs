@@ -24,6 +24,7 @@ public class Order
     public string?  Notas                        { get; set; }
     public bool     Archivado                    { get; set; } = false;
     public DateTime? ArchivadoEn                 { get; set; }
+    public DateTime  ActualizadoEn               { get; set; } = DateTime.UtcNow;
 
     // Empleado que atendió el pedido: quien lo capturó (venta física) o quien lo
     // validó (pedido web/telefónico). Es la única atribución de pedido → persona

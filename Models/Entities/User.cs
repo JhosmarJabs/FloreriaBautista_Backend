@@ -13,6 +13,12 @@ public class User
     public bool     EsCliente         { get; set; } = false;
     public string   Estado            { get; set; } = "ACTIVO";
     public bool     CorreoVerificado  { get; set; } = false;
+    /// <summary>
+    /// Privilegio de turno: un unico empleado a la vez puede tenerlo activo.
+    /// Garantizado por indice unico parcial en BD (WHERE es_responsable_turno = true).
+    /// </summary>
+    public bool     EsResponsableTurno { get; set; } = false;
+
     public DateTime CreadoEn         { get; set; } = DateTime.UtcNow;
     public DateTime ActualizadoEn    { get; set; } = DateTime.UtcNow;
 
