@@ -1,5 +1,6 @@
 using FloreriaBautista.Data;
 using FloreriaBautista.Models.DTOs.Common;
+using FloreriaBautista.Models.DTOs.Products;
 using FloreriaBautista.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -32,7 +33,7 @@ public class AdminRecipesController : ControllerBase
     }
 
     [HttpPost("{productId:guid}")]
-    public async Task<IActionResult> GuardarReceta(Guid productId, [FromBody] List<ProductRecipe> request)
+    public async Task<IActionResult> GuardarReceta(Guid productId, [FromBody] List<RecipeItemRequestDto> request)
     {
         var product = await _context.Products.FindAsync(productId);
         if (product == null) return NotFound(ApiResponseDto<string>.Fail("Producto no encontrado"));
@@ -40,6 +41,7 @@ public class AdminRecipesController : ControllerBase
         // ── Validacion de receta simplificada para venta instantanea ──
         // Si el producto permite venta instantanea, solo se acepta la fila
         // con flor primaria (exactamente un insumo con EsFlorPrimaria = true).
+        string? advertencia = null;
         if (product.PermiteVentaInstantanea && request.Count > 0)
         {
             // Cargar los InventoryItems referenciados para verificar EsFlorPrimaria
@@ -55,7 +57,7 @@ public class AdminRecipesController : ControllerBase
                 .Where(r => !inventoryItems.TryGetValue(r.InventoryItemId, out var item) || !item.EsFlorPrimaria)
                 .ToList();
 
-            if (filasPrimarias.Count == 0)
+            if (filasPrimarias.Count != 1)
             {
                 return UnprocessableEntity(ApiResponseDto<string>.Fail(
                     "Este producto permite venta instantanea y requiere exactamente " +
@@ -66,6 +68,8 @@ public class AdminRecipesController : ControllerBase
             {
                 // Advertencia: se descartan las filas que no son flor primaria
                 request = filasPrimarias;
+                advertencia = $"Se descartaron {filasNoPrimarias.Count} insumo(s) que no son flor primaria: " +
+                              "los productos con venta instantanea solo guardan la flor primaria.";
             }
         }
 
@@ -74,13 +78,18 @@ public class AdminRecipesController : ControllerBase
 
         foreach (var item in request)
         {
-            item.Id = Guid.NewGuid();
-            item.ProductId = productId;
-            _context.ProductRecipes.Add(item);
+            _context.ProductRecipes.Add(new ProductRecipe
+            {
+                Id = Guid.NewGuid(),
+                ProductId = productId,
+                InventoryItemId = item.InventoryItemId,
+                CantidadRequerida = item.CantidadRequerida
+            });
         }
 
         await _context.SaveChangesAsync();
-        return Ok(ApiResponseDto<string>.Ok("Receta guardada", "Receta de producto actualizada correctamente."));
+        return Ok(ApiResponseDto<string>.Ok("Receta guardada",
+            advertencia ?? "Receta de producto actualizada correctamente."));
     }
 
     [HttpGet("{productId:guid}/suggested-price")]

@@ -1,5 +1,6 @@
 using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Models.DTOs.Inventory;
+using FloreriaBautista.Services;
 using FloreriaBautista.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,7 +14,13 @@ namespace FloreriaBautista.Controllers.Admin;
 public class AdminInventoryController : ControllerBase
 {
     private readonly IInventoryService _inventoryService;
-    public AdminInventoryController(IInventoryService inventoryService) => _inventoryService = inventoryService;
+    private readonly IForecastService  _forecastService;
+
+    public AdminInventoryController(IInventoryService inventoryService, IForecastService forecastService)
+    {
+        _inventoryService = inventoryService;
+        _forecastService  = forecastService;
+    }
 
     // GET /api/admin/inventory/kpis
     [HttpGet("kpis")]
@@ -33,9 +40,9 @@ public class AdminInventoryController : ControllerBase
 
     // GET /api/admin/inventory/delta?desde=<ISO-8601> — solo lo cambiado
     [HttpGet("delta")]
-    public async Task<IActionResult> Delta([FromQuery] DateTime desde)
+    public async Task<IActionResult> Delta([FromQuery] DateTime? desde)
     {
-        var resultado = await _inventoryService.ListarDeltaAsync(desde);
+        var resultado = await _inventoryService.ListarDeltaAsync(FechaHelper.DesdeDelta(desde));
         return Ok(ApiResponseDto<IndexResultDto<InventoryIndexDto>>.Ok(resultado));
     }
 
@@ -134,6 +141,13 @@ public class AdminInventoryController : ControllerBase
     {
         await _inventoryService.RegistrarSnapshotDiarioAsync();
         return Ok(ApiResponseDto<object>.Ok(new { }, "Snapshot diario registrado con éxito."));
+    }
+
+    [HttpGet("{id:guid}/forecast")]
+    public async Task<IActionResult> Forecast(Guid id)
+    {
+        var result = await _forecastService.GenerarRecomendacionAsync(id);
+        return Ok(ApiResponseDto<ForecastResultDto>.Ok(result));
     }
 
     private Guid? ObtenerUsuarioId()

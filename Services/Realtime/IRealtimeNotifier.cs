@@ -18,6 +18,12 @@ public interface IRealtimeNotifier
 
     /// <summary>Notifica informativa al admin de un pedido anticipado (>=1 semana).</summary>
     Task PedidoAnticipadoInformativoAsync(PedidoNuevoNotificacion notificacion);
+
+    /// <summary>Avisa al admin que un empleado reportó un error en un registro suyo.</summary>
+    Task ReporteErrorCreadoAsync(Guid reporteId, string tipoRegistro, string nombreEmpleado);
+
+    /// <summary>Avisa al empleado que atendió el pedido que otra persona le cambió el estado.</summary>
+    Task PedidoCambioEstadoAsync(Guid orderId, Guid empleadoId, string nuevoEstado);
 }
 
 public class PedidoNuevoNotificacion

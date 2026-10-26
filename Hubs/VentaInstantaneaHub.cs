@@ -1,19 +1,24 @@
 using System.Security.Claims;
 using FloreriaBautista.Data;
+using FloreriaBautista.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace FloreriaBautista.Hubs;
 
+// Exige JWT; el token llega por ?access_token= (ServiceExtensions). Sin roles:
+// staff y clientes comparten el hub; la regla por rol va en cada metodo.
 [Authorize]
 public class VentaInstantaneaHub : Hub
 {
     private readonly AppDbContext _context;
+    private readonly ILogger<VentaInstantaneaHub> _logger;
 
-    public VentaInstantaneaHub(AppDbContext context)
+    public VentaInstantaneaHub(AppDbContext context, ILogger<VentaInstantaneaHub> logger)
     {
         _context = context;
+        _logger = logger;
     }
 
     public override async Task OnConnectedAsync()
@@ -58,10 +63,37 @@ public class VentaInstantaneaHub : Hub
 
     /// <summary>
     /// El cliente (rol CLIENTE) se suscribe al grupo de su solicitud para
-    /// recibir la decision en tiempo real.
+    /// recibir la decision en tiempo real. Solo el dueño de la solicitud puede
+    /// hacerlo; "no existe" y "no es tuya" responden igual para no permitir
+    /// enumerar solicitudes ajenas.
     /// </summary>
     public async Task SuscribirSolicitud(string solicitudId)
     {
-        await Groups.AddToGroupAsync(Context.ConnectionId, $"solicitud-{solicitudId}");
+        if (!Guid.TryParse(solicitudId, out var id))
+            throw Rechazo("formato", "Solicitud no válida.");
+
+        var userId = Context.User?.UsuarioId();
+        if (userId == null)
+            throw Rechazo("usuario", "No autorizado.");
+
+        if (!Context.User!.IsInRole("CLIENTE"))
+            throw Rechazo("rol", "No autorizado.", userId);
+
+        var esDueno = await _context.SolicitudesVentaInstantanea
+            .AsNoTracking()
+            .AnyAsync(s => s.Id == id && s.Customer.UserId == userId);
+        if (!esDueno)
+            throw Rechazo("propiedad", "No autorizado.", userId);
+
+        // El Guid parseado (formato D, minusculas) coincide con el que interpola RealtimeNotifier.
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"solicitud-{id}");
+    }
+
+    private HubException Rechazo(string motivo, string mensaje, Guid? userId = null)
+    {
+        _logger.LogWarning(
+            "SuscribirSolicitud rechazada. ConnectionId={ConnectionId} UserId={UserId} Motivo={Motivo}",
+            Context.ConnectionId, userId, motivo);
+        return new HubException(mensaje);
     }
 }

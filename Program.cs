@@ -5,6 +5,7 @@ using FloreriaBautista.Extensions;
 using FloreriaBautista.Hubs;
 using FloreriaBautista.Json;
 using FloreriaBautista.Middleware;
+using Microsoft.Net.Http.Headers;
 
 // Carga el archivo .env según el entorno.
 var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
@@ -47,18 +48,15 @@ builder.Services.AddControllers()
         o.JsonSerializerOptions.Converters.Add(new NullableUtcDateTimeConverter());
     });
 
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>() ?? Array.Empty<string>();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("DefaultPolicy", policy =>
     {
-        // 8083 es Metro, el servidor de desarrollo de la app móvil interna
-        // (mobile-admin). Solo hace falta cuando se prueba la app en el
-        // navegador: compilada para Android o iOS no pasa por CORS.
-        policy.WithOrigins(
-                  "http://localhost:3000",
-                  "http://localhost:3001",
-                  "http://localhost:5173",
-                  "http://localhost:8083")
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials();
@@ -80,7 +78,26 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerDocumentation();
 }
 
-app.UseCors("DefaultPolicy"); 
+// CORS solo añade "Vary: Origin" con 2+ orígenes permitidos y nunca en rechazos; aquí se
+// garantiza siempre (una sola vez) para que ninguna caché mezcle respuestas de orígenes distintos.
+app.Use((context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        var vary = context.Response.Headers.Vary;
+        var yaIncluyeOrigin = vary
+            .SelectMany(v => (v ?? string.Empty).Split(','))
+            .Any(v => string.Equals(v.Trim(), HeaderNames.Origin, StringComparison.OrdinalIgnoreCase));
+        if (!yaIncluyeOrigin)
+        {
+            context.Response.Headers.Append(HeaderNames.Vary, HeaderNames.Origin);
+        }
+        return Task.CompletedTask;
+    });
+    return next(context);
+});
+
+app.UseCors("DefaultPolicy");
 app.UseHttpsRedirection();
 app.UseMiddleware<AlexaApiKeyMiddleware>();
 app.UseAuthentication();

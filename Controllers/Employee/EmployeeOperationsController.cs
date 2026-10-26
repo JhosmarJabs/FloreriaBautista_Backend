@@ -1,10 +1,13 @@
+using FloreriaBautista.Data;
 using FloreriaBautista.Extensions;
 using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Models.DTOs.Employee;
 using FloreriaBautista.Models.DTOs.Orders;
+using FloreriaBautista.Models.Entities;
 using FloreriaBautista.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace FloreriaBautista.Controllers.Employee;
 
@@ -28,17 +31,20 @@ public class EmployeeOperationsController : ControllerBase
     private readonly IEmployeeExpenseService _expenses;
     private readonly ICashCutService         _cashCuts;
     private readonly IErrorReportService     _errorReports;
+    private readonly AppDbContext             _context;
 
     public EmployeeOperationsController(
         IOrderService           orders,
         IEmployeeExpenseService expenses,
         ICashCutService         cashCuts,
-        IErrorReportService     errorReports)
+        IErrorReportService     errorReports,
+        AppDbContext             context)
     {
         _orders       = orders;
         _expenses     = expenses;
         _cashCuts     = cashCuts;
         _errorReports = errorReports;
+        _context      = context;
     }
 
     // ── Ventas ────────────────────────────────────────────────────
@@ -135,4 +141,70 @@ public class EmployeeOperationsController : ControllerBase
         var reportes = await _errorReports.ListarMisPendientesAsync(User.UsuarioIdRequerido());
         return Ok(ApiResponseDto<List<ErrorReportDto>>.Ok(reportes));
     }
+
+    // ── Push notifications ───────────────────────────────────────
+
+    // POST /api/employee/push-token
+    [HttpPost("push-token")]
+    public async Task<IActionResult> RegistrarPushToken([FromBody] RegisterPushTokenRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Token))
+            return BadRequest(ApiResponseDto<object>.Fail("El token es obligatorio."));
+
+        var userId = User.UsuarioIdRequerido();
+
+        // Un token por dispositivo: si el teléfono estaba registrado con otra persona,
+        // se reasigna a quien acaba de iniciar sesión.
+        var existing = await _context.PushTokenDevices
+            .FirstOrDefaultAsync(p => p.Token == request.Token);
+
+        if (existing != null)
+        {
+            existing.UserId = userId;
+            existing.Platform = request.Platform ?? "android";
+            existing.ActualizadoEn = DateTime.UtcNow;
+        }
+        else
+        {
+            _context.PushTokenDevices.Add(new PushTokenDevice
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                Token = request.Token,
+                Platform = request.Platform ?? "android",
+                ActualizadoEn = DateTime.UtcNow
+            });
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponseDto<object>.Ok(null!, "Token registrado."));
+    }
+
+    // DELETE /api/employee/push-token
+    // Se llama al cerrar sesión. Idempotente, y solo borra el token del usuario del JWT.
+    [HttpDelete("push-token")]
+    public async Task<IActionResult> EliminarPushToken([FromBody] UnregisterPushTokenRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Token))
+            return BadRequest(ApiResponseDto<object>.Fail("El token es obligatorio."));
+
+        var userId = User.UsuarioIdRequerido();
+
+        await _context.PushTokenDevices
+            .Where(p => p.UserId == userId && p.Token == request.Token)
+            .ExecuteDeleteAsync();
+
+        return Ok(ApiResponseDto<object>.Ok(null!, "Token eliminado."));
+    }
+}
+
+public class UnregisterPushTokenRequest
+{
+    public string Token { get; set; } = string.Empty;
+}
+
+public class RegisterPushTokenRequest
+{
+    public string Token { get; set; } = string.Empty;
+    public string? Platform { get; set; }
 }

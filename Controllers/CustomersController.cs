@@ -3,6 +3,7 @@ using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Models.DTOs.Customers;
 using FloreriaBautista.Models.DTOs.Orders;
 using FloreriaBautista.Models.Entities;
+using FloreriaBautista.Models.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -119,6 +120,10 @@ public class CustomersController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int size = 20)
     {
+        // Misma regla de paginación que el resto de listados: nunca más de 100 por página.
+        page = Math.Max(1, page);
+        size = Math.Clamp(size, 1, 100);
+
         var existe = await _context.Customers.AnyAsync(c => c.Id == customerId);
         if (!existe)
             return NotFound(ApiResponseDto<object>.Fail("Cliente no encontrado."));
@@ -126,6 +131,14 @@ public class CustomersController : ControllerBase
         var query = _context.Orders.Where(o => o.CustomerId == customerId);
 
         var total = await query.CountAsync();
+
+        // Total comprado = todos los pedidos del cliente excepto cancelados (incluye la variante
+        // histórica "CANCELADA" de EstadosPedido.Finales); difiere a propósito de la recaudación
+        // bruta de los listados de pedidos. Es independiente de page/size.
+        var sumaTotal = await query
+            .Where(o => o.EstadoPedido != EstadosPedido.Cancelado && o.EstadoPedido != "CANCELADA")
+            .SumAsync(o => (decimal?)o.Total) ?? 0m;
+
         var items = await query
             .OrderByDescending(o => o.FechaCreacion)
             .Skip((page - 1) * size)
@@ -147,7 +160,8 @@ public class CustomersController : ControllerBase
             Total        = total,
             Pagina       = page,
             TamanoPagina = size,
-            TotalPaginas = (int)Math.Ceiling(total / (double)size)
+            TotalPaginas = (int)Math.Ceiling(total / (double)size),
+            SumaTotal    = sumaTotal
         };
 
         return Ok(ApiResponseDto<PagedResultDto<OrderSummaryDto>>.Ok(resultado));

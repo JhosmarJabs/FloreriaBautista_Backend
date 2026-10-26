@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using FloreriaBautista.Data;
 using FloreriaBautista.Services.Reports;
 using FloreriaBautista.Services.Interfaces;
+using FloreriaBautista.Services.WhatsApp;
 using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Models.DTOs.Inventory;
 
@@ -19,14 +20,16 @@ public class AlexaController : ControllerBase
     private readonly ReportsService _reportsService;
     private readonly IInventoryService _inventoryService;
     private readonly IFechaHelper _fechas;
+    private readonly IWhatsAppNotifier _whatsApp;
 
     public AlexaController(AppDbContext context, ReportsService reportsService,
-        IInventoryService inventoryService, IFechaHelper fechas)
+        IInventoryService inventoryService, IFechaHelper fechas, IWhatsAppNotifier whatsApp)
     {
         _context = context;
         _reportsService = reportsService;
         _inventoryService = inventoryService;
         _fechas = fechas;
+        _whatsApp = whatsApp;
     }
 
     // GET /api/alexa/inventory
@@ -283,34 +286,27 @@ public class AlexaController : ControllerBase
             Console.WriteLine($"✅ Mensaje generado ({mensaje.Length} caracteres)");
 
             var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production" ? "prod" : "test";
-            var n8nUrl = "https://edith-n8n.btxyoq.easypanel.host/webhook/reabastecer";
+            Console.WriteLine("\n📍 [PASO 3] Encolando en el servicio de WhatsApp...");
 
-            Console.WriteLine("\n📍 [PASO 3] Enviando a n8n...");
-            Console.WriteLine($"   URL: {n8nUrl}");
+            // Se encola en el servicio de WhatsApp propio (antes iba a un webhook de n8n).
+            // El envío lo hace el despachador; el código HTTP ya no depende de un tercero.
+            var encolados = await _whatsApp.EncolarAsync(WhatsAppConstantes.EventoReabastecimiento, mensaje);
 
-            // Enviar al webhook de n8n (n8n se encarga de reenviarlo a Evolution API)
-            var response = await EnviarAn8nAsync(n8nUrl, mensaje, environment);
-
-            if (!response.IsSuccessStatusCode)
+            if (encolados == 0)
             {
-                var errorContent = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"\n❌ ERROR EN N8N");
-                Console.WriteLine($"   Código: {response.StatusCode}");
-                Console.WriteLine($"   Respuesta: {errorContent}");
+                Console.WriteLine("\n⚠️  No se encoló: WhatsApp deshabilitado, evento apagado o sin destinatarios");
                 Console.WriteLine(new string('=', 80) + "\n");
-                return StatusCode(500, ApiResponseDto<object>.Fail($"Error enviando a n8n: {response.StatusCode}"));
+                return Ok(ApiResponseDto<object>.Fail(
+                    "No se pudo enviar por WhatsApp: el servicio no está habilitado o no hay destinatarios."));
             }
 
-            var responseContent = await response.Content.ReadAsStringAsync();
-            Console.WriteLine($"\n✅ ¡ÉXITO! Solicitud enviada a n8n correctamente");
-            Console.WriteLine($"   Status Code: {response.StatusCode}");
-            Console.WriteLine($"   Respuesta: {responseContent}");
+            Console.WriteLine($"\n✅ Solicitud encolada para {encolados} destinatario(s)");
 
             Console.WriteLine("\n📍 [PASO 4] Preparando respuesta al cliente...");
 
             var resultado = new
             {
-                mensaje = "Solicitud de reabastecimiento enviada por WhatsApp",
+                mensaje = "Solicitud de reabastecimiento enviada",
                 productosCortos = productosCortos.Count(),
                 ambiente = environment,
                 timestamp = DateTime.UtcNow
@@ -320,15 +316,6 @@ public class AlexaController : ControllerBase
             Console.WriteLine(new string('=', 80) + "\n");
 
             return Ok(ApiResponseDto<object>.Ok(resultado));
-        }
-        catch (HttpRequestException hre)
-        {
-            Console.WriteLine($"\n❌ ERROR DE CONEXIÓN");
-            Console.WriteLine($"   Tipo: {hre.GetType().Name}");
-            Console.WriteLine($"   Mensaje: {hre.Message}");
-            Console.WriteLine($"   Problema: No se puede conectar al webhook de n8n");
-            Console.WriteLine(new string('=', 80) + "\n");
-            return StatusCode(503, ApiResponseDto<object>.Fail($"No se puede conectar a n8n: {hre.Message}"));
         }
         catch (Exception ex)
         {
@@ -355,58 +342,12 @@ public class AlexaController : ControllerBase
 
         return mensaje;
     }
-
-    // Método privado para enviar la solicitud al webhook de n8n
-    // (n8n es quien se encarga de reenviar el mensaje a Evolution API/WhatsApp)
-    private async Task<HttpResponseMessage> EnviarAn8nAsync(string url, string mensaje, string environment)
-    {
-        try
-        {
-            using (var client = new HttpClient())
-            {
-                client.Timeout = TimeSpan.FromSeconds(15);
-
-                var payload = new
-                {
-                    mensaje = mensaje,
-                    environment = environment
-                };
-
-                var json = System.Text.Json.JsonSerializer.Serialize(payload);
-                var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
-                Console.WriteLine($"\n   📤 Enviando POST a n8n...");
-                Console.WriteLine($"   URL: {url}");
-                Console.WriteLine($"   Payload: {json}");
-
-                var response = await client.PostAsync(url, content);
-                var responseContent = await response.Content.ReadAsStringAsync();
-
-                if (response.IsSuccessStatusCode)
-                {
-                    Console.WriteLine($"\n   ✅ Respuesta exitosa (HTTP {response.StatusCode})");
-                    Console.WriteLine($"   Content: {responseContent}");
-                }
-                else
-                {
-                    Console.WriteLine($"\n   ❌ Respuesta con error (HTTP {response.StatusCode})");
-                    Console.WriteLine($"   Content: {responseContent}");
-                }
-
-                return response;
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[n8n Exception] {ex.Message}");
-            throw;
-        }
-    }
 }
 
 /// <summary>
 /// Cuerpo del POST /api/alexa/reabastecer. La Skill de Alexa indica el ambiente
-/// ("prod" o "test") para que el backend elija la URL de n8n correspondiente.
+/// ("prod" o "test"). Desde que el aviso va al servicio de WhatsApp propio (ya no a n8n),
+/// el backend no lo usa para elegir ninguna URL.
 /// </summary>
 public class ReabastecerRequest
 {

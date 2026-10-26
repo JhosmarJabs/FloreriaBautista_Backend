@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace FloreriaBautista.Models.DTOs.Promotions;
 
 public class AplicarCuponRequestDto
@@ -9,6 +11,7 @@ public class AplicarCuponRequestDto
 public class PricingItemDto
 {
     public Guid ProductId { get; set; }
+    [Range(1, 999)]
     public int  Cantidad  { get; set; }
 }
 

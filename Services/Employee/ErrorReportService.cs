@@ -4,6 +4,7 @@ using FloreriaBautista.Models.DTOs.Employee;
 using FloreriaBautista.Models.Entities;
 using FloreriaBautista.Models.Exceptions;
 using FloreriaBautista.Services.Interfaces;
+using FloreriaBautista.Services.Realtime;
 using Microsoft.EntityFrameworkCore;
 
 namespace FloreriaBautista.Services.Employee;
@@ -22,15 +23,18 @@ public class ErrorReportService : IErrorReportService
     /// <summary>Acciones que dejan el registro sin efecto contable.</summary>
     private static readonly string[] AccionesQueAnulan = ["CANCELADO", "INVALIDADO", "ELIMINADO"];
 
-    private readonly AppDbContext  _context;
-    private readonly IFechaHelper  _fechas;
-    private readonly IAuditService _audit;
+    private readonly AppDbContext      _context;
+    private readonly IFechaHelper      _fechas;
+    private readonly IAuditService     _audit;
+    private readonly IRealtimeNotifier _realtime;
 
-    public ErrorReportService(AppDbContext context, IFechaHelper fechas, IAuditService audit)
+    public ErrorReportService(AppDbContext context, IFechaHelper fechas, IAuditService audit,
+        IRealtimeNotifier realtime)
     {
-        _context = context;
-        _fechas  = fechas;
-        _audit   = audit;
+        _context  = context;
+        _fechas   = fechas;
+        _audit    = audit;
+        _realtime = realtime;
     }
 
     public async Task<ErrorReportDto> CrearAsync(Guid usuarioId, CreateErrorReportRequestDto request)
@@ -74,6 +78,12 @@ public class ErrorReportService : IErrorReportService
         await _audit.RegistrarAsync("REPORTAR", "ErrorReport", reporte.Id.ToString(), usuarioId,
             new { reporte.TipoRegistro, reporte.RegistroId, reporte.Motivo });
 
+        var nombreEmpleado = await _context.Users
+            .Where(u => u.Id == usuarioId)
+            .Select(u => (u.Nombre + " " + u.Apellido).Trim())
+            .FirstOrDefaultAsync() ?? "Un empleado";
+        await _realtime.ReporteErrorCreadoAsync(reporte.Id, tipo, nombreEmpleado);
+
         return MapToDto(reporte);
     }
 
@@ -98,6 +108,9 @@ public class ErrorReportService : IErrorReportService
     // ── Admin ─────────────────────────────────────────────────────
     public async Task<PagedResultDto<ErrorReportDto>> ListarAdminAsync(string? estado, int page, int size)
     {
+        page = Math.Max(1, page);
+        size = Math.Clamp(size, 1, 100);
+
         var query = _context.ErrorReports.Include(r => r.Usuario).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(estado))

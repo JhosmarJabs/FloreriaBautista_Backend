@@ -24,6 +24,9 @@ public class InventoryItemDto
     public decimal? PrecioUnidadCompra  { get; set; }
     public string?  UnidadCompra        { get; set; }
     public int?     VidaUtilDias        { get; set; }
+
+    // Marca de sincronización: la misma que trae el elemento de /index y /delta.
+    public DateTime? ActualizadoEn      { get; set; }
 }
 
 public class CreateInventoryItemDto

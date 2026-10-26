@@ -36,6 +36,7 @@ public class CartController : ControllerBase
         }
     }
 
+    [Authorize(Roles = "CLIENTE")]
     [HttpPost("calcular")]
     public async Task<IActionResult> Calcular([FromBody] AplicarCuponRequestDto request)
     {

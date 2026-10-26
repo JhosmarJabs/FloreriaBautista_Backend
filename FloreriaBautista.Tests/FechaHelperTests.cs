@@ -1,3 +1,4 @@
+using FloreriaBautista.Models.Exceptions;
 using FloreriaBautista.Services;
 using FloreriaBautista.Tests.TestHelpers;
 using Microsoft.Extensions.Configuration;
@@ -66,6 +67,54 @@ public class FechaHelperTests
 
         Assert.Equal(TimeSpan.FromHours(-6),
                      fechas.Zona.GetUtcOffset(new DateTime(2026, 8, 11, 12, 0, 0, DateTimeKind.Utc)));
+    }
+
+    // ── Parámetro 'desde' de los endpoints /delta ─────────────────
+
+    [Fact]
+    public void ComoUtc_Sin_Zona_Se_Toma_Como_Utc_Sin_Mover_La_Hora()
+    {
+        var sinZona = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Unspecified);
+
+        var utc = FechaHelper.ComoUtc(sinZona);
+
+        Assert.Equal(DateTimeKind.Utc, utc.Kind);
+        Assert.Equal(new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc), utc);
+    }
+
+    [Fact]
+    public void ComoUtc_Local_Se_Convierte_A_Utc()
+    {
+        var local = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Local);
+
+        var utc = FechaHelper.ComoUtc(local);
+
+        Assert.Equal(DateTimeKind.Utc, utc.Kind);
+        Assert.Equal(local.ToUniversalTime(), utc);
+    }
+
+    [Fact]
+    public void ComoUtc_Utc_No_Cambia()
+    {
+        var utc = new DateTime(2026, 9, 1, 6, 30, 0, DateTimeKind.Utc);
+
+        Assert.Equal(utc, FechaHelper.ComoUtc(utc));
+        Assert.Equal(DateTimeKind.Utc, FechaHelper.ComoUtc(utc).Kind);
+    }
+
+    [Fact]
+    public void DesdeDelta_Sin_Valor_Es_Error_De_Validacion()
+    {
+        // Sin 'desde' la consulta devolvería todo el histórico: se rechaza (400).
+        Assert.Throws<AppException>(() => FechaHelper.DesdeDelta(null));
+    }
+
+    [Fact]
+    public void DesdeDelta_Normaliza_A_Utc()
+    {
+        var sinZona = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Unspecified);
+
+        Assert.Equal(DateTimeKind.Utc, FechaHelper.DesdeDelta(sinZona).Kind);
     }
 
     private static FechaHelper CrearDesdeConfig(string zonaId)

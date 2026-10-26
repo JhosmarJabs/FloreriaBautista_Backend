@@ -7,6 +7,9 @@ public class RegisterPaymentRequestDto
     [Required] [Range(0.01, double.MaxValue, ErrorMessage = "El monto debe ser mayor a 0.")]
     public decimal Monto  { get; set; }
     [Required] public string Metodo { get; set; } = string.Empty; // EFECTIVO / TARJETA / TRANSFERENCIA / OTRO
+    // UUID generado en el cliente: si la respuesta se pierde y el abono se
+    // reintenta con la misma clave, el servidor no lo registra dos veces.
+    public Guid?             IdLocalOffline { get; set; }
 }
 
 public class PaymentResponseDto

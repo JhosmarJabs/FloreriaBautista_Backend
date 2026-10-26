@@ -21,7 +21,14 @@ public class Order
     public decimal  Total                        { get; set; } = 0;
     public decimal  SaldoPendiente               { get; set; } = 0;
     public DateTime? SincronizadoEn             { get; set; }
+    // Instante en que el empleado capturó la venta en el dispositivo (puede ser
+    // anterior a la sincronización). Si difiere del día de FechaCreacion, la venta
+    // entró a un corte distinto al de su captura y el admin debe revisarla.
+    public DateTime? CapturadoEn                { get; set; }
     public string?  Notas                        { get; set; }
+    // Por qué se canceló el pedido. Obligatorio al pasar a CANCELADO; null en
+    // los demás estados y en los pedidos cancelados antes de existir el campo.
+    public string?  MotivoCancelacion            { get; set; }
     public bool     Archivado                    { get; set; } = false;
     public DateTime? ArchivadoEn                 { get; set; }
     public DateTime  ActualizadoEn               { get; set; } = DateTime.UtcNow;

@@ -169,7 +169,11 @@ public class AdminUsersController : ControllerBase
             Apellido         = user.Apellido,
             Correo           = user.Correo,
             Telefono         = user.Telefono,
+            Sexo             = user.Sexo,
+            FechaNacimiento  = user.FechaNacimiento,
             Estado           = user.Estado,
+            CorreoVerificado = user.CorreoVerificado,
+            EsResponsableTurno = user.EsResponsableTurno,
             Roles            = user.UserRoles.Select(ur => ur.Role.Nombre).ToList(),
             CreadoEn         = user.CreadoEn
         }));
@@ -205,6 +209,8 @@ public class AdminUsersController : ControllerBase
             {
                 anterior.EsResponsableTurno = false;
                 anterior.ActualizadoEn = DateTime.UtcNow;
+                // Persistir primero: el indice unico parcial se evalua por sentencia
+                await _context.SaveChangesAsync();
             }
 
             user.EsResponsableTurno = true;

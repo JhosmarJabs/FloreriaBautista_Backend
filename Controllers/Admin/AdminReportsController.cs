@@ -1,9 +1,11 @@
+using FloreriaBautista.Data;
 using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Models.DTOs.Reports;
 using FloreriaBautista.Services.Interfaces;
 using FloreriaBautista.Services.Reports;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace FloreriaBautista.Controllers.Admin;
 
@@ -18,19 +20,22 @@ public class AdminReportsController : ControllerBase
     private readonly SalesReportsService     _salesReports;
     private readonly PeopleReportsService    _peopleReports;
     private readonly IFechaHelper            _fechas;
+    private readonly AppDbContext             _context;
 
     public AdminReportsController(
         ReportsService          reportsService,
         InventoryReportsService inventoryReports,
         SalesReportsService     salesReports,
         PeopleReportsService    peopleReports,
-        IFechaHelper            fechas)
+        IFechaHelper            fechas,
+        AppDbContext             context)
     {
         _reportsService   = reportsService;
         _inventoryReports = inventoryReports;
         _salesReports     = salesReports;
         _peopleReports    = peopleReports;
         _fechas           = fechas;
+        _context          = context;
     }
 
     // GET /api/admin/reports/sales?desde=2026-01-01&hasta=2026-03-31
@@ -196,5 +201,30 @@ public class AdminReportsController : ControllerBase
         var p = ReportPeriod.Resolver(desde, hasta);
         var reporte = await _peopleReports.CuentasPorCobrarAsync(p);
         return Ok(ApiResponseDto<ReceivablesReportDto>.Ok(reporte));
+    }
+
+    [HttpGet("uncovered-demand")]
+    public async Task<IActionResult> DemandaNoCubierta(
+        [FromQuery] DateOnly? desde, [FromQuery] DateOnly? hasta)
+    {
+        var desdeUtc = _fechas.InicioDelDiaUtc(desde ?? _fechas.HoyLocal().AddDays(-30));
+        var hastaUtc = _fechas.InicioDelDiaUtc((hasta ?? _fechas.HoyLocal()).AddDays(1));
+
+        var datos = await _context.UncoveredDemands
+            .Where(d => d.FechaRegistro >= desdeUtc && d.FechaRegistro < hastaUtc)
+            .Include(d => d.InventoryItem)
+            .GroupBy(d => new { d.InventoryItemId, d.InventoryItem.Nombre })
+            .Select(g => new
+            {
+                InventoryItemId = g.Key.InventoryItemId,
+                Nombre          = g.Key.Nombre,
+                TotalDeficit    = g.Sum(d => d.Deficit),
+                Registros       = g.Count(),
+                Origenes        = g.Select(d => d.Origen).Distinct().ToList()
+            })
+            .OrderByDescending(x => x.TotalDeficit)
+            .ToListAsync();
+
+        return Ok(ApiResponseDto<object>.Ok(datos));
     }
 }

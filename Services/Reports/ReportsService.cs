@@ -191,9 +191,13 @@ public class ReportsService
                 : new DailySaleDto { Fecha = d, Pedidos = 0, Total = 0 });
         }
 
-        // 4. Inventario crítico
-        var criticalInventory = await _context.InventoryItems
-            .Where(i => i.Activo && i.StockActual <= i.StockMinimo)
+        // 4. Inventario crítico: el total con el mismo predicado y la lista de los 10 más críticos
+        var criticos = _context.InventoryItems
+            .Where(i => i.Activo && i.StockActual <= i.StockMinimo);
+
+        var criticalInventoryTotal = await criticos.CountAsync();
+
+        var criticalInventory = await criticos
             .OrderBy(i => i.StockActual)
             .Take(10)
             .Select(i => new LowStockDto
@@ -212,7 +216,8 @@ public class ReportsService
             AverageTicket     = avgTicket,
             NewCustomers      = newCustomers,
             MonthlySales      = ventasPorDia,
-            CriticalInventory = criticalInventory
+            CriticalInventory = criticalInventory,
+            CriticalInventoryTotal = criticalInventoryTotal
         };
     }
 }

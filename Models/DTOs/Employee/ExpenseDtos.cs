@@ -12,6 +12,13 @@ public class CreateExpenseRequestDto
 
     [MaxLength(500)]
     public string? Notas     { get; set; }
+
+    /// <summary>UUID del dispositivo: reenviar el mismo gasto no lo duplica.</summary>
+    public Guid?     IdLocalOffline { get; set; }
+
+    /// <summary>Instante de captura en el dispositivo (gasto offline). El
+    /// servidor lo valida (ventana de 48 h) y decide con él el día del gasto.</summary>
+    public DateTime? CapturadoEn    { get; set; }
 }
 
 public class ExpenseDto
@@ -34,4 +41,7 @@ public class ExpenseDto
     /// <summary>Nombre del empleado. Solo se llena en las consultas del admin;
     /// en las del empleado va vacío porque ya sabe que son suyos.</summary>
     public string?  Empleado         { get; set; }
+
+    /// <summary>Captura en el dispositivo; null si se registró en línea.</summary>
+    public DateTime? CapturadoEn     { get; set; }
 }

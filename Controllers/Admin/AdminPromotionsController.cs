@@ -45,10 +45,11 @@ public class AdminPromotionsController : ControllerBase
         var error = Validar(request);
         if (error != null) return BadRequest(ApiResponseDto<object>.Fail(error));
 
-        if (!string.IsNullOrWhiteSpace(request.Codigo))
+        var codigoNuevo = string.IsNullOrWhiteSpace(request.Codigo) ? null : request.Codigo.Trim().ToUpper();
+        if (codigoNuevo != null)
         {
             var codigoDuplicado = await _context.Promotions
-                .AnyAsync(p => p.Codigo == request.Codigo!.ToUpper());
+                .AnyAsync(p => p.Codigo == codigoNuevo);
             if (codigoDuplicado)
                 return BadRequest(ApiResponseDto<object>.Fail("Ya existe una promoción con ese código."));
         }
@@ -57,7 +58,7 @@ public class AdminPromotionsController : ControllerBase
         {
             Id                   = Guid.NewGuid(),
             Nombre               = request.Nombre.Trim(),
-            Codigo               = string.IsNullOrWhiteSpace(request.Codigo) ? null : request.Codigo.Trim().ToUpper(),
+            Codigo               = codigoNuevo,
             Tipo                 = request.Tipo.ToUpper(),
             Valor                = request.Valor,
             MinimoCompra         = request.MinimoCompra,

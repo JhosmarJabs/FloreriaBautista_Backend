@@ -2,6 +2,7 @@ using FloreriaBautista.Extensions;
 using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Models.DTOs.InstantSales;
 using FloreriaBautista.Models.DTOs.Orders;
+using FloreriaBautista.Services;
 using FloreriaBautista.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -94,10 +95,15 @@ public class AdminOrdersController : ControllerBase
     }
 
     // GET /api/admin/orders/delta?desde=<ISO-8601> — pedidos modificados desde la fecha
+    // El EMPLEADO recibe solo lo que le muestra el listado (su alcance de hoy),
+    // nunca el histórico del negocio.
     [HttpGet("delta")]
-    public async Task<IActionResult> Delta([FromQuery] DateTime desde)
+    public async Task<IActionResult> Delta([FromQuery] DateTime? desde)
     {
-        var resultado = await _orderService.ListarDeltaAdminAsync(desde);
+        var desdeUtc = FechaHelper.DesdeDelta(desde);
+        var resultado = User.EsAdmin()
+            ? await _orderService.ListarDeltaAdminAsync(desdeUtc)
+            : await _orderService.ListarDeltaEmpleadoAsync(User.UsuarioIdRequerido(), desdeUtc);
         return Ok(ApiResponseDto<IndexResultDto<OrderSummaryDto>>.Ok(resultado));
     }
 

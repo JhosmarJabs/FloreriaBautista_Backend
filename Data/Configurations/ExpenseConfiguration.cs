@@ -33,5 +33,8 @@ public class ExpenseConfiguration : IEntityTypeConfiguration<Expense>
         // termina en seq scan sobre la tabla general de gastos.
         builder.HasIndex(e => new { e.UsuarioId, e.FechaHora });
         builder.HasIndex(e => e.CashCutId);
+
+        // Idempotencia de la cola offline: un mismo gasto reenviado choca aquí.
+        builder.HasIndex(e => e.IdLocalOffline).IsUnique().HasFilter("id_local_offline IS NOT NULL");
     }
 }

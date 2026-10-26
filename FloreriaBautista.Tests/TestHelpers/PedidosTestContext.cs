@@ -7,7 +7,11 @@ using FloreriaBautista.Services.Employee;
 using FloreriaBautista.Services.Interfaces;
 using FloreriaBautista.Services.Realtime;
 using FloreriaBautista.Services.Scheduler;
+using FloreriaBautista.Services.Notifications;
+using FloreriaBautista.Services.WhatsApp;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FloreriaBautista.Tests.TestHelpers;
@@ -28,13 +32,32 @@ public sealed class PedidosTestContext : IDisposable
 
     private DateTime _ahoraUtc;
 
-    public PedidosTestContext(DateTime ahoraUtc)
+    // El nombre permite abrir un segundo contexto sobre la misma base (otra "petición").
+    private readonly string _nombreBd = $"pedidos-{Guid.NewGuid()}";
+
+    // Las opciones distintas dan otro proveedor interno y, con él, otra base en
+    // memoria: NuevoContexto debe repetir esta configuración para ver los mismos datos.
+    private readonly bool _ignorarTransacciones;
+
+    public PedidosTestContext(DateTime ahoraUtc, params IInterceptor[] interceptores)
+        : this(ahoraUtc, ignorarTransacciones: false, interceptores) { }
+
+    /// <param name="ignorarTransacciones">
+    /// La base en memoria no tiene transacciones y por defecto lanza al abrir una.
+    /// Las pruebas que pasan por RegistrarPagoAsync lo activan; las demás conservan
+    /// el comportamiento por defecto, del que dependen algunas (VentaDedupeTests).
+    /// </param>
+    public PedidosTestContext(DateTime ahoraUtc, bool ignorarTransacciones, params IInterceptor[] interceptores)
     {
         _ahoraUtc = DateTime.SpecifyKind(ahoraUtc, DateTimeKind.Utc);
 
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase($"pedidos-{Guid.NewGuid()}")
-            .Options;
+        var builder = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(_nombreBd)
+            .AddInterceptors(interceptores);
+        _ignorarTransacciones = ignorarTransacciones;
+        if (ignorarTransacciones)
+            builder.ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning));
+        var options = builder.Options;
 
         Db = new AppDbContext(options);
         Db.Customers.Add(new Customer
@@ -58,7 +81,12 @@ public sealed class PedidosTestContext : IDisposable
             NullLogger<OrderArchiver>.Instance);
 
     public OrderService CrearOrderService() =>
-        new(Db, Fechas, new NullRealtimeNotifier(), NullLogger<OrderService>.Instance);
+        new(Db, Fechas, new NullRealtimeNotifier(),
+            new NotificationService(Db, NullLogger<NotificationService>.Instance),
+            new PricingService(Db),
+            new AvailabilityService(Db, Fechas, new MemoryCache(new MemoryCacheOptions()),
+                NullLogger<AvailabilityService>.Instance),
+            NullLogger<OrderService>.Instance, new NullWhatsAppNotifier(), Auditoria);
 
     public Order AgregarPedido(
         DateOnly fechaEntrega, string estado, bool archivado = false,
@@ -118,7 +146,12 @@ public sealed class PedidosTestContext : IDisposable
         return gasto;
     }
 
-    public Payment AgregarPagoEfectivo(Guid orderId, DateTime fechaPagoUtc, decimal monto)
+    /// <param name="registradoPor">
+    /// Quien cobró. Por defecto, quien atendió el pedido: lo mismo que la migración
+    /// asigna a los pagos anteriores a que existiera la columna.
+    /// </param>
+    public Payment AgregarPagoEfectivo(Guid orderId, DateTime fechaPagoUtc, decimal monto,
+                                       Guid? registradoPor = null)
     {
         var pago = new Payment
         {
@@ -128,7 +161,9 @@ public sealed class PedidosTestContext : IDisposable
             TipoPago  = "TOTAL",
             Metodo    = "EFECTIVO",
             Estado    = "REGISTRADO",
-            FechaPago = DateTime.SpecifyKind(fechaPagoUtc, DateTimeKind.Utc)
+            FechaPago = DateTime.SpecifyKind(fechaPagoUtc, DateTimeKind.Utc),
+            RegistradoPorUsuarioId = registradoPor
+                ?? Db.Orders.Where(o => o.Id == orderId).Select(o => o.AtendidoPorUsuarioId).FirstOrDefault()
         };
         Db.Payments.Add(pago);
         Db.SaveChanges();
@@ -155,7 +190,7 @@ public sealed class PedidosTestContext : IDisposable
 
     public EmployeeExpenseService CrearGastoService() => new(Db, Fechas, Auditoria);
     public CashCutService         CrearCorteService() => new(Db, Fechas, Auditoria);
-    public ErrorReportService     CrearReporteService() => new(Db, Fechas, Auditoria);
+    public ErrorReportService     CrearReporteService() => new(Db, Fechas, Auditoria, new NullRealtimeNotifier());
 
     /// <summary>Relee el pedido desde la base, sin la copia rastreada en memoria.</summary>
     public Order Recargar(Guid pedidoId)
@@ -163,6 +198,15 @@ public sealed class PedidosTestContext : IDisposable
         var pedido = Db.Orders.Single(o => o.Id == pedidoId);
         Db.Entry(pedido).Reload();
         return pedido;
+    }
+
+    /// <summary>Contexto independiente sobre la misma base, sin interceptores (otra petición).</summary>
+    public AppDbContext NuevoContexto()
+    {
+        var builder = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_nombreBd);
+        if (_ignorarTransacciones)
+            builder.ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning));
+        return new AppDbContext(builder.Options);
     }
 
     public void Dispose() => Db.Dispose();
@@ -175,4 +219,13 @@ internal sealed class NullRealtimeNotifier : IRealtimeNotifier
     public Task SolicitudDecididaAsync(Guid solicitudId, SolicitudVentaInstantaneaDto solicitud) => Task.CompletedTask;
     public Task PedidoNuevoAsync(PedidoNuevoNotificacion notificacion) => Task.CompletedTask;
     public Task PedidoAnticipadoInformativoAsync(PedidoNuevoNotificacion notificacion) => Task.CompletedTask;
+    public Task ReporteErrorCreadoAsync(Guid reporteId, string tipoRegistro, string nombreEmpleado) => Task.CompletedTask;
+    public Task PedidoCambioEstadoAsync(Guid orderId, Guid empleadoId, string nuevoEstado) => Task.CompletedTask;
+}
+
+internal sealed class NullWhatsAppNotifier : IWhatsAppNotifier
+{
+    public Task<int> EncolarAsync(string tipoEvento, string texto, string? entidadTipo = null,
+        Guid? entidadId = null, TimeSpan? deduplicarVentana = null) => Task.FromResult(0);
+    public Task<int> EncolarPruebaAsync(Guid? recipientId) => Task.FromResult(0);
 }

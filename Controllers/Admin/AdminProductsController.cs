@@ -1,5 +1,6 @@
 using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Models.DTOs.Products;
+using FloreriaBautista.Services;
 using FloreriaBautista.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -33,9 +34,9 @@ public class AdminProductsController : ControllerBase
 
     // GET /api/admin/products/delta?desde=<ISO-8601> — solo lo cambiado
     [HttpGet("delta")]
-    public async Task<IActionResult> Delta([FromQuery] DateTime desde)
+    public async Task<IActionResult> Delta([FromQuery] DateTime? desde)
     {
-        var resultado = await _productService.ListarDeltaAsync(desde);
+        var resultado = await _productService.ListarDeltaAsync(FechaHelper.DesdeDelta(desde));
         return Ok(ApiResponseDto<IndexResultDto<ProductIndexDto>>.Ok(resultado));
     }
 

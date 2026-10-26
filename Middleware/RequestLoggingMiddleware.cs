@@ -26,7 +26,7 @@ public class RequestLoggingMiddleware
             "→ [{Method}] {Path}{Query} | Origen: {Origin} | IP: {IP}",
             req.Method,
             req.Path,
-            req.QueryString,
+            QueryStringMasker.Mask(req.QueryString),
             origin,
             ip);
 

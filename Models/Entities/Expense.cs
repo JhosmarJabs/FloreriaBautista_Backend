@@ -35,6 +35,14 @@ public class Expense
 
     public string?  Notas     { get; set; }
 
+    /// <summary>UUID generado en el dispositivo para que un reenvío del mismo
+    /// gasto (respuesta perdida, cola offline) no cree un segundo registro.</summary>
+    public Guid?    IdLocalOffline { get; set; }
+
+    /// <summary>Instante en que el empleado capturó el gasto en el dispositivo.
+    /// Null en los gastos registrados en línea antes de existir la cola offline.</summary>
+    public DateTime? CapturadoEn   { get; set; }
+
     public User     Usuario   { get; set; } = null!;
     public CashCut? CashCut   { get; set; }
 }

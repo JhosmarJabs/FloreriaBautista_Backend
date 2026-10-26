@@ -87,17 +87,25 @@ public class AuthService : IAuthService
     // ── Refresh ───────────────────────────────────────────────────
     public async Task<LoginResponseDto> RefreshAsync(string refreshToken)
     {
-        var token = await _context.AuthTokens
-            .Include(t => t.User).ThenInclude(u => u.UserRoles).ThenInclude(ur => ur.Role)
-            .FirstOrDefaultAsync(t =>
-                t.Token == refreshToken && t.Tipo == "REFRESH" &&
-                !t.Usado && t.ExpiraEn > DateTime.UtcNow);
+        var ahora = DateTime.UtcNow;
 
-        if (token == null)
+        // Reclamo atómico: el UPDATE lleva la condición completa, así que de varias
+        // peticiones simultáneas con el mismo token solo una afecta la fila.
+        var reclamadas = await _context.AuthTokens
+            .Where(t => t.Token == refreshToken && t.Tipo == "REFRESH" &&
+                        !t.Usado && t.ExpiraEn > ahora)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.Usado, true));
+
+        if (reclamadas == 0)
             throw new UnauthorizedException("Refresh token inválido o expirado.");
 
-        token.Usado = true;
-        await _context.SaveChangesAsync();
+        var token = await _context.AuthTokens
+            .Include(t => t.User).ThenInclude(u => u.UserRoles).ThenInclude(ur => ur.Role)
+            .FirstAsync(t => t.Token == refreshToken && t.Tipo == "REFRESH");
+
+        // Una cuenta desactivada no renueva (mismo mensaje para no distinguir el rechazo).
+        if (token.User.Estado != "ACTIVO")
+            throw new UnauthorizedException("Refresh token inválido o expirado.");
 
         var user  = token.User;
         var roles = user.UserRoles.Select(ur => ur.Role.Nombre).ToList();
@@ -121,6 +129,13 @@ public class AuthService : IAuthService
             .Where(t => t.UserId == userId && t.Tipo == "REFRESH" && !t.Usado)
             .ToListAsync();
         foreach (var t in tokens) t.Usado = true;
+
+        // Sin sesiones abiertas no debe llegar ningún push a sus teléfonos.
+        var pushTokens = await _context.PushTokenDevices
+            .Where(p => p.UserId == userId)
+            .ToListAsync();
+        _context.PushTokenDevices.RemoveRange(pushTokens);
+
         await _context.SaveChangesAsync();
     }
 

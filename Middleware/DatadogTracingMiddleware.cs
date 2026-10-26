@@ -43,7 +43,7 @@ public class DatadogTracingMiddleware
 
         // Standard HTTP semantic tags understood by Datadog APM
         span.SetTag(Tags.HttpMethod, method);
-        span.SetTag(Tags.HttpUrl,    $"{req.Scheme}://{req.Host}{path}{req.QueryString}");
+        span.SetTag(Tags.HttpUrl,    $"{req.Scheme}://{req.Host}{path}{QueryStringMasker.Mask(req.QueryString)}");
         span.SetTag("network.client.ip", ctx.Connection.RemoteIpAddress?.ToString() ?? "?");
 
         try

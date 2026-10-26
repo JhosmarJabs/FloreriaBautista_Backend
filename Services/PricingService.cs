@@ -47,6 +47,9 @@ public class PricingService : IPricingService
 
         foreach (var item in items)
         {
+            if (item.Cantidad < 1 || item.Cantidad > 999)
+                throw new AppException("La cantidad de cada producto debe estar entre 1 y 999.");
+
             if (!products.TryGetValue(item.ProductId, out var product))
                 throw new AppException($"Producto '{item.ProductId}' no encontrado.");
             if (product.Estado != "ACTIVO")

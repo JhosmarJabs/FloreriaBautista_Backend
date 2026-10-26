@@ -12,8 +12,12 @@ public class OrderResponseDto
     public decimal? CostoEnvio     { get; set; }
     public decimal  SaldoPendiente { get; set; }
     public string?  Notas          { get; set; }
+    public string?  MotivoCancelacion { get; set; }
     public string   NombreCliente  { get; set; } = string.Empty;
     public DateTime FechaCreacion  { get; set; }
+    // Captura en el dispositivo (venta offline). Si su día local difiere del de
+    // FechaCreacion, la venta entró a otro corte y requiere revisión del admin.
+    public DateTime? CapturadoEn   { get; set; }
     public bool     Archivado      { get; set; }
 
     public DireccionDto             Direccion { get; set; } = null!;
@@ -57,4 +61,7 @@ public class UpdateOrderStatusRequestDto
 {
     public string NuevoEstado { get; set; } = string.Empty;
     public string? Notas      { get; set; }
+
+    /// Obligatorio cuando NuevoEstado es CANCELADO (1 a 500 caracteres); se ignora en los demás estados.
+    public string? MotivoCancelacion { get; set; }
 }

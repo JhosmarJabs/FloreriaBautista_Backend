@@ -15,6 +15,10 @@ public class SiteSettingsDto
     public string    Correo          { get; set; } = string.Empty;
     public string    Direccion       { get; set; } = string.Empty;
     public string    DireccionUrl    { get; set; } = string.Empty;
+    // Datos legales: null = no viene (se conserva); "" = vaciar (se guarda null).
+    public string?   RazonSocial      { get; set; }
+    public string?   Rfc              { get; set; }
+    public string?   CorreoPrivacidad { get; set; }
     public string    FacebookUrl     { get; set; } = string.Empty;
     public string    InstagramUrl    { get; set; } = string.Empty;
     public string    WhatsappUrl     { get; set; } = string.Empty;

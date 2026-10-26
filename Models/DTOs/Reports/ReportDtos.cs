@@ -57,4 +57,6 @@ public class DashboardStatsDto
     public int                NewCustomers      { get; set; }
     public List<DailySaleDto> MonthlySales      { get; set; } = [];
     public List<LowStockDto>  CriticalInventory { get; set; } = [];
+    // Total real de insumos críticos; CriticalInventory trae solo los 10 más críticos.
+    public int                CriticalInventoryTotal { get; set; }
 }

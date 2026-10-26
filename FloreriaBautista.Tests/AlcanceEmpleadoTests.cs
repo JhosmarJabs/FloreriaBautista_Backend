@@ -202,6 +202,66 @@ public class AlcanceEmpleadoTests
         Assert.Equal(EstadosPedido.EnRuta, resultado.EstadoPedido);
     }
 
+    // ── Delta de pedidos ──────────────────────────────────────────
+
+    private static readonly DateTime DesdeAntiguo = new(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    [Fact]
+    public async Task El_Delta_Del_Empleado_Excluye_Pedidos_Ajenos_De_Otro_Dia_Y_Archivados()
+    {
+        // El delta es otra puerta a los mismos pedidos: no puede dar más que el
+        // listado. Antes entregaba el histórico completo del negocio.
+        using var ctx = new PedidosTestContext(Utc23HoraLocal);
+        var ana  = ctx.AgregarEmpleado("Ana");
+        var beto = ctx.AgregarEmpleado("Beto");
+
+        // De Beto, capturado hoy, para entregar mañana: no le toca a Ana.
+        ctx.AgregarPedido(Manana, EstadosPedido.EnPreparacion,
+            atendidoPor: beto, fechaCreacion: Utc23HoraLocal);
+        // De Ana, pero de ayer y ya archivado.
+        ctx.AgregarPedido(new DateOnly(2026, 8, 10), EstadosPedido.Entregado, archivado: true,
+            atendidoPor: ana, fechaCreacion: UtcAyer23HoraLocal);
+
+        var delta = await ctx.CrearOrderService().ListarDeltaEmpleadoAsync(ana, DesdeAntiguo);
+
+        Assert.Empty(delta.Items);
+        Assert.False(string.IsNullOrEmpty(delta.SincronizadoEn));
+    }
+
+    [Fact]
+    public async Task El_Delta_Del_Empleado_Incluye_Su_Venta_De_Hoy()
+    {
+        using var ctx = new PedidosTestContext(Utc23HoraLocal);
+        var ana  = ctx.AgregarEmpleado("Ana");
+        var beto = ctx.AgregarEmpleado("Beto");
+
+        var suya = ctx.AgregarPedido(Manana, EstadosPedido.EnPreparacion,
+            atendidoPor: ana, fechaCreacion: Utc23HoraLocal);
+        var entregaDeHoy = ctx.AgregarPedido(Hoy, EstadosPedido.EnRuta,
+            atendidoPor: beto, fechaCreacion: UtcAyer23HoraLocal);
+
+        var delta = await ctx.CrearOrderService().ListarDeltaEmpleadoAsync(ana, DesdeAntiguo);
+
+        var ids = delta.Items.Select(i => i.Id).ToList();
+        Assert.Equal(2, ids.Count);
+        Assert.Contains(suya.Id, ids);
+        Assert.Contains(entregaDeHoy.Id, ids);
+    }
+
+    [Fact]
+    public async Task El_Delta_Del_Empleado_Respeta_La_Marca_Desde()
+    {
+        using var ctx = new PedidosTestContext(Utc23HoraLocal);
+        var ana  = ctx.AgregarEmpleado("Ana");
+        var suya = ctx.AgregarPedido(Manana, EstadosPedido.EnPreparacion,
+            atendidoPor: ana, fechaCreacion: Utc23HoraLocal);
+
+        var delta = await ctx.CrearOrderService()
+            .ListarDeltaEmpleadoAsync(ana, suya.ActualizadoEn.AddSeconds(1));
+
+        Assert.Empty(delta.Items);
+    }
+
     // ── Corte de caja ─────────────────────────────────────────────
 
     [Fact]

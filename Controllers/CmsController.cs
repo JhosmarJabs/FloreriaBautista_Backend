@@ -1,6 +1,7 @@
 using FloreriaBautista.Models.DTOs.Cms;
 using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Services;
+using FloreriaBautista.Services.Cms;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FloreriaBautista.Controllers;
@@ -13,7 +14,12 @@ namespace FloreriaBautista.Controllers;
 public class CmsController : ControllerBase
 {
     private readonly CmsService _cmsService;
-    public CmsController(CmsService cmsService) => _cmsService = cmsService;
+    private readonly ContenidoLegalService _legalService;
+    public CmsController(CmsService cmsService, ContenidoLegalService legalService)
+    {
+        _cmsService   = cmsService;
+        _legalService = legalService;
+    }
 
     // GET /api/cms
     [HttpGet]
@@ -21,5 +27,13 @@ public class CmsController : ControllerBase
     {
         var settings = await _cmsService.ObtenerAsync();
         return Ok(ApiResponseDto<SiteSettingsDto>.Ok(settings));
+    }
+
+    // GET /api/cms/legal — los 5 documentos legales y de ayuda (sin notas de revisión).
+    [HttpGet("legal")]
+    public async Task<IActionResult> ObtenerLegal()
+    {
+        var legal = await _legalService.ObtenerPublicoAsync();
+        return Ok(ApiResponseDto<ContenidoLegalPublicoDto>.Ok(legal));
     }
 }

@@ -1,3 +1,4 @@
+using FloreriaBautista.Models.Exceptions;
 using FloreriaBautista.Services.Interfaces;
 
 namespace FloreriaBautista.Services;
@@ -56,6 +57,29 @@ public class FechaHelper : IFechaHelper
         // excepción en las horas inexistentes de un cambio de horario de verano.
         return DateTime.SpecifyKind(local - Zona.GetUtcOffset(local), DateTimeKind.Utc);
     }
+
+    /// <summary>
+    /// Trata un <see cref="DateTime"/> recibido como UTC, con la misma regla que
+    /// <c>Json.UtcDateTimeConverter</c> aplica al cuerpo JSON: sin zona → se toma
+    /// como UTC; local → se convierte; UTC → igual. Hace falta en la query string,
+    /// donde el model binder deja <c>Kind=Unspecified</c> a las fechas sin zona y
+    /// Npgsql las rechaza contra <c>timestamp with time zone</c>.
+    /// </summary>
+    public static DateTime ComoUtc(DateTime valor) => valor.Kind switch
+    {
+        DateTimeKind.Unspecified => DateTime.SpecifyKind(valor, DateTimeKind.Utc),
+        DateTimeKind.Local       => valor.ToUniversalTime(),
+        _                        => valor,
+    };
+
+    /// <summary>
+    /// Valida y normaliza el parámetro <c>desde</c> de los endpoints <c>/delta</c>:
+    /// es obligatorio (sin él la consulta devolvería todo) y se trata como UTC.
+    /// </summary>
+    public static DateTime DesdeDelta(DateTime? desde) =>
+        desde.HasValue
+            ? ComoUtc(desde.Value)
+            : throw new AppException("El parámetro 'desde' es obligatorio (fecha ISO-8601).");
 
     private static TimeZoneInfo ResolverZona(string? idConfigurado, ILogger logger)
     {
