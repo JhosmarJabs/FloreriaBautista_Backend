@@ -7,7 +7,7 @@ public class CreateExpenseRequestDto
     [Required] [MaxLength(200)]
     public string  Concepto  { get; set; } = string.Empty;
 
-    [Required] [Range(0.01, double.MaxValue, ErrorMessage = "El importe debe ser mayor a 0.")]
+    [Required] [Range(0.01, 99999999.99, ErrorMessage = "El importe debe ser mayor a 0 y no puede pasar de 99,999,999.99.")]
     public decimal Importe   { get; set; }
 
     [MaxLength(500)]
