@@ -7,8 +7,8 @@ public interface IRealtimeNotifier
     /// <summary>Notifica al grupo admin que hay una solicitud nueva PENDIENTE.</summary>
     Task SolicitudPendienteAsync(SolicitudVentaInstantaneaDto solicitud);
 
-    /// <summary>Notifica al responsable de turno que se escalaron solicitudes.</summary>
-    Task SolicitudEscaladaAsync(SolicitudVentaInstantaneaDto solicitud);
+    /// <summary>Notifica al responsable de turno (<paramref name="responsableId"/>) que se escaló una solicitud.</summary>
+    Task SolicitudEscaladaAsync(SolicitudVentaInstantaneaDto solicitud, Guid responsableId);
 
     /// <summary>Notifica al cliente dueño de la solicitud que se tomó una decision.</summary>
     Task SolicitudDecididaAsync(Guid solicitudId, SolicitudVentaInstantaneaDto solicitud);

@@ -98,7 +98,7 @@ public class InstantSaleExpirer : IInstantSaleExpirer
                         Estado              = item.Estado,
                         CreadaEn            = item.CreadaEn,
                         EscaladaAEmpleadoEn = item.EscaladaAEmpleadoEn,
-                    });
+                    }, responsable.Id);
                 }
             }
         }

@@ -215,7 +215,7 @@ public sealed class PedidosTestContext : IDisposable
 internal sealed class NullRealtimeNotifier : IRealtimeNotifier
 {
     public Task SolicitudPendienteAsync(SolicitudVentaInstantaneaDto solicitud) => Task.CompletedTask;
-    public Task SolicitudEscaladaAsync(SolicitudVentaInstantaneaDto solicitud) => Task.CompletedTask;
+    public Task SolicitudEscaladaAsync(SolicitudVentaInstantaneaDto solicitud, Guid responsableId) => Task.CompletedTask;
     public Task SolicitudDecididaAsync(Guid solicitudId, SolicitudVentaInstantaneaDto solicitud) => Task.CompletedTask;
     public Task PedidoNuevoAsync(PedidoNuevoNotificacion notificacion) => Task.CompletedTask;
     public Task PedidoAnticipadoInformativoAsync(PedidoNuevoNotificacion notificacion) => Task.CompletedTask;

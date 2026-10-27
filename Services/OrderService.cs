@@ -346,6 +346,10 @@ public class OrderService : IOrderService
         // inventario solo trae lo que tiene ActualizadoEn posterior a 'desde'.
         var ahora = _fechas.AhoraUtc();
 
+        // Stock de cada insumo antes de la primera salida por venta de esta operación
+        // (para avisar STOCK_BAJO si la salida lo hace cruzar el mínimo).
+        var stockAntesVenta = new Dictionary<Guid, (InventoryItem Item, int StockAntes)>();
+
         // ── Descuento de inventario al entrar en preparación (pedidos no instantáneos) ──
         if (nuevoEstado == "EN_PREPARACION" && estadoAnterior == "PENDIENTE_VALIDACION" && !esVentaInstantanea)
         {
@@ -360,6 +364,7 @@ public class OrderService : IOrderService
                 foreach (var receta in recetas)
                 {
                     var cantidadSalida = receta.CantidadRequerida * oi.Cantidad;
+                    stockAntesVenta.TryAdd(receta.InventoryItemId, (receta.InventoryItem, receta.InventoryItem.StockActual));
                     receta.InventoryItem.StockActual -= cantidadSalida;
                     receta.InventoryItem.ActualizadoEn = ahora;
 
@@ -413,6 +418,8 @@ public class OrderService : IOrderService
         order.ActualizadoEn = ahora;
         await _context.SaveChangesAsync();
         _logger.LogInformation("Pedido {Id}: {Anterior} → {Nuevo}", orderId, estadoAnterior, nuevoEstado);
+
+        await AvisarStockBajoAsync(stockAntesVenta);
 
         // Los nombres en minúscula los lee PeopleReportsService (tiempo de preparación).
         await _audit.RegistrarAsync(
@@ -525,6 +532,8 @@ public class OrderService : IOrderService
         order.ActualizadoEn = ahora;
         await _context.SaveChangesAsync();
 
+        var stockAntesVenta = new Dictionary<Guid, (InventoryItem Item, int StockAntes)>();
+
         // ── Confirmar reserva de venta instantánea al liquidar ──────
         if (nuevoSaldo == 0)
         {
@@ -560,6 +569,7 @@ public class OrderService : IOrderService
                     foreach (var receta in recetas)
                     {
                         var cantidadSalida = receta.CantidadRequerida * oi.Cantidad;
+                        stockAntesVenta.TryAdd(receta.InventoryItemId, (receta.InventoryItem, receta.InventoryItem.StockActual));
                         receta.InventoryItem.StockActual -= cantidadSalida;
                         receta.InventoryItem.ActualizadoEn = ahora;
 
@@ -587,6 +597,10 @@ public class OrderService : IOrderService
         }
 
         await tx.CommitAsync();
+
+        // Fuera de la transacción: la notificación guarda por su cuenta y no debe
+        // entrar ni revertirse con el pago.
+        await AvisarStockBajoAsync(stockAntesVenta);
 
         // Fuera de la transacción: AuditService guarda por su cuenta. Sin usuario
         // es un pago que acreditó el sistema (webhook de Mercado Pago).
@@ -823,7 +837,7 @@ public class OrderService : IOrderService
                 Cantidad  = i.Cantidad
             }).ToList();
 
-            breakdown = await _pricing.CalcularTotalAsync(pricingItems, codigoCupon);
+            breakdown = await _pricing.CalcularTotalAsync(pricingItems, codigoCupon, customer.UserId);
 
             var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
             var productIds = items.Select(i => i.ProductId).Distinct().ToList();
@@ -979,6 +993,7 @@ public class OrderService : IOrderService
 
         // Misma marca para el pedido y los insumos que descuenta la venta de mostrador.
         var ahora = _fechas.AhoraUtc();
+        var stockAntesVenta = new Dictionary<Guid, (InventoryItem Item, int StockAntes)>();
 
         // ── SALIDA inmediata: venta de mostrador ──────────────────
         // Cuando la venta es instantánea de mostrador (entregaInmediata),
@@ -1009,6 +1024,7 @@ public class OrderService : IOrderService
                 foreach (var receta in recetas)
                 {
                     var cantidadSalida = receta.CantidadRequerida * oi.Cantidad;
+                    stockAntesVenta.TryAdd(receta.InventoryItemId, (receta.InventoryItem, receta.InventoryItem.StockActual));
                     receta.InventoryItem.StockActual -= cantidadSalida;
                     receta.InventoryItem.ActualizadoEn = ahora;
 
@@ -1051,33 +1067,61 @@ public class OrderService : IOrderService
         order.ActualizadoEn = ahora;
         _context.Orders.Add(order);
 
-        if (solicitud == null)
+        // El cupón solo se consume si fue el descuento realmente aplicado (no si ganó el
+        // descuento automático). El consumo va en la misma transacción que el pedido.
+        var cuponAplicado = usarPricing
+            && !string.IsNullOrWhiteSpace(codigoCupon)
+            && breakdown!.DescuentosAplicados.Any(d => d.Origen == "CUPON");
+
+        if (solicitud == null && !cuponAplicado)
         {
             await _context.SaveChangesAsync();
         }
         else
         {
-            // ── Vincular solicitud de venta instantánea al Order ─────────
-            // Se reclama con una actualización condicional en la misma transacción
-            // que inserta el pedido: si dos peticiones llegan a la vez, la segunda
-            // afecta 0 filas y su pedido se descarta. El pedido va primero porque
+            // Una sola transacción para el pedido, el consumo del cupón y la vinculación
+            // de la solicitud de venta instantánea. El pedido va primero porque
             // order_id es FK a orders.
             await using var tx = await _context.Database.BeginTransactionAsync();
             await _context.SaveChangesAsync();
 
-            var vinculadas = await _context.SolicitudesVentaInstantanea
-                .Where(s => s.Id == solicitud.Id && s.OrderId == null && s.Estado == "ACEPTADA")
-                .ExecuteUpdateAsync(set => set.SetProperty(s => s.OrderId, order.Id));
-
-            if (vinculadas == 0)
+            if (cuponAplicado)
             {
-                await tx.RollbackAsync();
-                var sigueAceptada = await _context.SolicitudesVentaInstantanea
-                    .AsNoTracking()
-                    .AnyAsync(s => s.Id == solicitud.Id && s.Estado == "ACEPTADA");
-                throw new ConflictException(sigueAceptada
-                    ? "Esta solicitud de venta instantánea ya tiene un pedido asociado."
-                    : "La solicitud de venta instantánea no está aceptada.");
+                // Incremento atómico: si dos peticiones llegan a la vez, la segunda espera el
+                // bloqueo de fila, reevalúa usos_actuales < max_usos, afecta 0 filas y su
+                // pedido se descarta.
+                var filas = await _context.Database.ExecuteSqlRawAsync(
+                    "UPDATE promotions SET usos_actuales = usos_actuales + 1 " +
+                    "WHERE UPPER(codigo) = {0} AND (max_usos IS NULL OR usos_actuales < max_usos)",
+                    codigoCupon!.Trim().ToUpper());
+                if (filas == 0)
+                {
+                    await tx.RollbackAsync();
+                    throw new AppException("Este cupón ya alcanzó su número máximo de usos.");
+                }
+                _logger.LogInformation("Cupón {Codigo} usado en pedido {Id}", codigoCupon, order.Id);
+            }
+
+            if (solicitud != null)
+            {
+                // ── Vincular solicitud de venta instantánea al Order ─────────
+                // Se reclama con una actualización condicional en la misma transacción
+                // que inserta el pedido: si dos peticiones llegan a la vez, la segunda
+                // afecta 0 filas y su pedido se descarta.
+                var vinculadas = await _context.SolicitudesVentaInstantanea
+                    .Where(s => s.Id == solicitud.Id && s.OrderId == null && s.Estado == "ACEPTADA")
+                    .ExecuteUpdateAsync(set => set.SetProperty(s => s.OrderId, order.Id));
+
+                if (vinculadas == 0)
+                {
+                    await tx.RollbackAsync();
+                    var sigueAceptada = await _context.SolicitudesVentaInstantanea
+                        .AsNoTracking()
+                        .AnyAsync(s => s.Id == solicitud.Id && s.Estado == "ACEPTADA");
+                    throw new ConflictException(sigueAceptada
+                        ? "Esta solicitud de venta instantánea ya tiene un pedido asociado."
+                        : "La solicitud de venta instantánea no está aceptada.");
+                }
             }
 
             await tx.CommitAsync();
@@ -1085,15 +1129,8 @@ public class OrderService : IOrderService
 
         _logger.LogInformation("Pedido creado: {Id} | Total: {Total} | Pagado: {Pagado}", order.Id, total, pagado);
 
-        if (!string.IsNullOrWhiteSpace(codigoCupon))
-        {
-            var filas = await _context.Database.ExecuteSqlRawAsync(
-                "UPDATE promotions SET usos_actuales = usos_actuales + 1 " +
-                "WHERE UPPER(codigo) = {0} AND (max_usos IS NULL OR usos_actuales < max_usos)",
-                codigoCupon.Trim().ToUpper());
-            if (filas > 0)
-                _logger.LogInformation("Cupón {Codigo} usado en pedido {Id}", codigoCupon, order.Id);
-        }
+        // Ya guardado el pedido (y su descuento de inventario): avisar STOCK_BAJO si cruzó el mínimo.
+        await AvisarStockBajoAsync(stockAntesVenta);
 
         // SignalR: notificar a empleados sobre el pedido nuevo
         var direccionTexto = string.IsNullOrWhiteSpace(order.DireccionEntregaCalle)
@@ -1130,6 +1167,16 @@ public class OrderService : IOrderService
 
     // ── Avisos por WhatsApp (encolado; el envío lo hace el despachador) ──
     // Van después del SaveChanges y nunca cambian la respuesta de la operación.
+    /// <summary>
+    /// Avisa STOCK_BAJO de cada insumo que una salida por venta hizo cruzar su mínimo.
+    /// Se llama siempre después del guardado definitivo; la regla vive en StockBajoAviso.
+    /// </summary>
+    private async Task AvisarStockBajoAsync(Dictionary<Guid, (InventoryItem Item, int StockAntes)> stockAntesVenta)
+    {
+        foreach (var (item, stockAntes) in stockAntesVenta.Values)
+            await StockBajoAviso.NotificarSiCruzoMinimoAsync(item, stockAntes, _notificaciones, _whatsApp, _logger);
+    }
+
     private async Task AvisarPedidoNuevoWhatsAppAsync(PedidoNuevoNotificacion n, bool anticipado)
     {
         try

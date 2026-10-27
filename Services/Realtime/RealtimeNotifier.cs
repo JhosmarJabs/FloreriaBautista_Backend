@@ -58,14 +58,14 @@ public class RealtimeNotifier : IRealtimeNotifier
             solicitud.Id, "pendiente");
     }
 
-    public async Task SolicitudEscaladaAsync(SolicitudVentaInstantaneaDto solicitud)
+    public async Task SolicitudEscaladaAsync(SolicitudVentaInstantaneaDto solicitud, Guid responsableId)
     {
         await PersistirSinFallarAsync(() =>
-            _notificaciones.CrearParaUsuariosAsync(
+            _notificaciones.CrearParaUsuarioAsync(
+                responsableId,
                 "VENTA_INSTANTANEA_ESCALADA",
                 "Solicitud de venta instantánea escalada",
                 $"La solicitud de {solicitud.NombreCliente} fue escalada al responsable de turno.",
-                ["ADMIN", "EMPLEADO"],
                 "SolicitudVentaInstantanea", solicitud.Id));
 
         _logger.LogInformation(
