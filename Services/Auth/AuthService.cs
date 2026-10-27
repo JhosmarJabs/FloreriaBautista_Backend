@@ -301,6 +301,7 @@ public class AuthService : IAuthService
         FechaNacimiento  = user.FechaNacimiento,
         Estado           = user.Estado,
         CorreoVerificado = user.CorreoVerificado,
+        EsResponsableTurno = user.EsResponsableTurno,
         Roles            = user.UserRoles.Select(ur => ur.Role.Nombre).ToList(),
         CreadoEn         = user.CreadoEn
     };

@@ -151,6 +151,14 @@ public class EmployeeOperationsController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Token))
             return BadRequest(ApiResponseDto<object>.Fail("El token es obligatorio."));
 
+        // Límites de las columnas (ver PushTokenDeviceConfiguration): se validan aquí
+        // para responder 400 en vez de dejar que la BD falle con 22001 (500).
+        const int MaxToken = 512, MaxPlatform = 20;
+        if (request.Token.Length > MaxToken)
+            return BadRequest(ApiResponseDto<object>.Fail($"El token no puede superar {MaxToken} caracteres."));
+        if (request.Platform != null && request.Platform.Length > MaxPlatform)
+            return BadRequest(ApiResponseDto<object>.Fail($"La plataforma no puede superar {MaxPlatform} caracteres."));
+
         var userId = User.UsuarioIdRequerido();
 
         // Un token por dispositivo: si el teléfono estaba registrado con otra persona,
