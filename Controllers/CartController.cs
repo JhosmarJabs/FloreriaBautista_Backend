@@ -1,5 +1,6 @@
 using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Models.DTOs.Promotions;
+using FloreriaBautista.Extensions;
 using FloreriaBautista.Models.Exceptions;
 using FloreriaBautista.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -27,8 +28,12 @@ public class CartController : ControllerBase
 
         try
         {
-            var breakdown = await _pricing.CalcularTotalAsync(request.Items, request.CodigoCupon);
+            var breakdown = await _pricing.CalcularTotalAsync(request.Items, request.CodigoCupon, User.UsuarioId());
             return Ok(ApiResponseDto<PricingBreakdownDto>.Ok(breakdown));
+        }
+        catch (TooManyRequestsException ex)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, ApiResponseDto<object>.Fail(ex.Message));
         }
         catch (AppException ex)
         {
@@ -46,8 +51,12 @@ public class CartController : ControllerBase
         try
         {
             var codigoCupon = string.IsNullOrWhiteSpace(request.CodigoCupon) ? null : request.CodigoCupon;
-            var breakdown = await _pricing.CalcularTotalAsync(request.Items, codigoCupon);
+            var breakdown = await _pricing.CalcularTotalAsync(request.Items, codigoCupon, User.UsuarioId());
             return Ok(ApiResponseDto<PricingBreakdownDto>.Ok(breakdown));
+        }
+        catch (TooManyRequestsException ex)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, ApiResponseDto<object>.Fail(ex.Message));
         }
         catch (AppException ex)
         {

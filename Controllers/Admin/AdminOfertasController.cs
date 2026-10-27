@@ -74,19 +74,20 @@ public class AdminOfertasController : ControllerBase
         var error = await Validar(request, id);
         if (error != null) return BadRequest(ApiResponseDto<object>.Fail(error));
 
-        item.ProductoId    = request.ProductoId;
+        // Se compara contra el producto ACTUAL antes de sobrescribir (FIX-008).
+        if (item.ProductoId != request.ProductoId)
+        {
+            var producto = await _context.Products.FindAsync(request.ProductoId);
+            if (producto == null) return BadRequest(ApiResponseDto<object>.Fail("Producto no encontrado."));
+            item.ProductoId = request.ProductoId;
+            item.Producto   = producto;
+        }
+
         item.PrecioOferta  = request.PrecioOferta;
         item.FechaInicio   = request.FechaInicio;
         item.FechaFin      = request.FechaFin;
         item.Activo        = request.Activo;
         item.ActualizadoEn = DateTime.UtcNow;
-
-        if (item.ProductoId != request.ProductoId)
-        {
-            var producto = await _context.Products.FindAsync(request.ProductoId);
-            if (producto == null) return BadRequest(ApiResponseDto<object>.Fail("Producto no encontrado."));
-            item.Producto = producto;
-        }
 
         await _context.SaveChangesAsync();
         return Ok(ApiResponseDto<OfertaDto>.Ok(MapToDto(item), "Oferta actualizada correctamente."));

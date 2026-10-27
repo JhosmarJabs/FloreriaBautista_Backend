@@ -9,15 +9,21 @@ namespace FloreriaBautista.Services;
 
 public class PricingService : IPricingService
 {
-    private readonly AppDbContext _context;
+    private const string MensajeCuponNoValido = "El código de cupón no es válido.";
+    private const string MensajeDemasiadosIntentos =
+        "Demasiados intentos con códigos de cupón. Intenta de nuevo en unos minutos.";
 
-    public PricingService(AppDbContext context)
+    private readonly AppDbContext _context;
+    private readonly CuponIntentosLimiter? _limiter;
+
+    public PricingService(AppDbContext context, CuponIntentosLimiter? limiter = null)
     {
         _context = context;
+        _limiter = limiter;
     }
 
     public async Task<PricingBreakdownDto> CalcularTotalAsync(
-        List<PricingItemDto> items, string? codigoCupon = null)
+        List<PricingItemDto> items, string? codigoCupon = null, Guid? usuarioId = null)
     {
         if (items.Count == 0)
             throw new AppException("El carrito está vacío.");
@@ -162,17 +168,23 @@ public class PricingService : IPricingService
         DescuentoAplicadoDto? descuentoCupon = null;
         if (!string.IsNullOrWhiteSpace(codigoCupon))
         {
+            var limitar = _limiter != null && usuarioId.HasValue;
+            if (limitar && _limiter!.EstaBloqueado(usuarioId!.Value))
+                throw new TooManyRequestsException(MensajeDemasiadosIntentos);
+
             var cupon = await _context.Promotions
                 .FirstOrDefaultAsync(p => p.Codigo == codigoCupon.Trim().ToUpper());
 
-            if (cupon == null)
-                throw new AppException("El código de cupón no existe.");
-            if (cupon.Estado != "ACTIVO")
-                throw new AppException("Este cupón no está activo.");
-            if (cupon.FechaInicio.HasValue && cupon.FechaInicio > hoy)
-                throw new AppException("Este cupón aún no es válido.");
-            if (cupon.FechaFin.HasValue && cupon.FechaFin < hoy)
-                throw new AppException("Este cupón ha expirado.");
+            // Mensaje único para inexistente / inactivo / aún no vigente / vencido:
+            // no permite saber qué códigos existen. Cada uno cuenta como intento fallido.
+            if (cupon == null
+                || cupon.Estado != "ACTIVO"
+                || (cupon.FechaInicio.HasValue && cupon.FechaInicio > hoy)
+                || (cupon.FechaFin.HasValue && cupon.FechaFin < hoy))
+            {
+                if (limitar) _limiter!.RegistrarFallo(usuarioId!.Value);
+                throw new AppException(MensajeCuponNoValido);
+            }
             if (cupon.MaxUsos.HasValue && cupon.UsosActuales >= cupon.MaxUsos.Value)
                 throw new AppException("Este cupón ya alcanzó su número máximo de usos.");
             if (cupon.MinimoCompra > 0 && subtotalConOfertas < cupon.MinimoCompra)

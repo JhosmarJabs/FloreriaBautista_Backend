@@ -36,6 +36,7 @@ public class ExceptionMiddleware
             ForbiddenException    => (HttpStatusCode.Forbidden,          ex.Message),
             ConflictException     => (HttpStatusCode.Conflict,           ex.Message),
             UnprocessableEntityException => (HttpStatusCode.UnprocessableEntity, ex.Message),
+            TooManyRequestsException => (HttpStatusCode.TooManyRequests, ex.Message),
             AppException         => (HttpStatusCode.BadRequest,         ex.Message),
             _ => (HttpStatusCode.InternalServerError,
                   isDev

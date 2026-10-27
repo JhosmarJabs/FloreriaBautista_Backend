@@ -159,6 +159,7 @@ public static class ServiceExtensions
         services.AddScoped<IImportService, ImportService>();
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<IOrderService, OrderService>();
+        services.AddSingleton<CuponIntentosLimiter>();
         services.AddScoped<IPricingService, PricingService>();
         services.AddScoped<IInstantSaleService, InstantSaleService>();
         services.AddScoped<IAvailabilityService, AvailabilityService>();
