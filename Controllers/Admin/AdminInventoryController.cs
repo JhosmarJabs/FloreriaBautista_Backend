@@ -87,6 +87,7 @@ public class AdminInventoryController : ControllerBase
 
     // POST /api/admin/inventory/movements
     [HttpPost("movements")]
+    [Authorize(Roles = "ADMIN")]
     public async Task<IActionResult> RegistrarMovimiento([FromBody] RegisterMovementRequestDto request)
     {
         var usuarioId = ObtenerUsuarioId();
