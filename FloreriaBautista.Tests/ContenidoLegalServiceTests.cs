@@ -227,4 +227,28 @@ public class ContenidoLegalServiceTests
         Assert.Null(r3.RazonSocial);
         Assert.Null((await svc.ObtenerAsync()).Rfc);
     }
+
+    [Fact]
+    public async Task Cms_Coordenadas_Null_Las_Borra_Y_Un_Valor_Las_Reemplaza()
+    {
+        using var db = NuevaBd();
+        var svc = new CmsService(db);
+
+        var a = Ajustes(); a.Latitud = 20.1167m; a.Longitud = -98.7333m;
+        var r1 = await svc.ActualizarAsync(a);
+        Assert.Equal(20.1167m, r1.Latitud);
+        Assert.Equal(-98.7333m, r1.Longitud);
+
+        var b = Ajustes(); b.Latitud = 20.1167m; b.Longitud = null;
+        var r2 = await svc.ActualizarAsync(b);
+        Assert.Equal(20.1167m, r2.Latitud);
+        Assert.Null(r2.Longitud);
+
+        var r3 = await svc.ActualizarAsync(Ajustes());
+        Assert.Null(r3.Latitud);
+        Assert.Null(r3.Longitud);
+        var leido = await svc.ObtenerAsync();
+        Assert.Null(leido.Latitud);
+        Assert.Null(leido.Longitud);
+    }
 }
