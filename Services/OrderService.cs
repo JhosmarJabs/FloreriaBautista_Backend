@@ -40,6 +40,11 @@ public class OrderService : IOrderService
         ["PENDIENTE_ANULACION"]  = ["CANCELADO", "EN_PREPARACION"]
     };
 
+    // Texto único del motivo de la SALIDA de preparación: la escribe el descuento y la lee
+    // CambiarEstadoAsync para saber si el pedido ya descontó. No cambiarlo: los movimientos
+    // ya guardados dejarían de encontrarse.
+    private static string MotivoPreparacion(Guid orderId) => $"Preparación — Pedido {orderId}";
+
     public OrderService(AppDbContext context, IFechaHelper fechas, IRealtimeNotifier realtime,
         INotificationService notificaciones, IPricingService pricing,
         IAvailabilityService availability, ILogger<OrderService> logger,
@@ -130,9 +135,20 @@ public class OrderService : IOrderService
                 .ToList();
 
             if (faltantes.Count > 0 && !request.VentaSincronizadaSinConexion)
+            {
+                // La venta rechazada también es demanda que no se pudo cubrir.
+                // Aún no hay cambios del pedido en el contexto: el guardado de
+                // cada registro no arrastra nada más.
+                Guid? productoDemanda = productIds.Count == 1 ? productIds[0] : null;
+                foreach (var f in faltantes)
+                    await _availability.RegistrarDemandaNoCubiertaAsync(
+                        f.Insumo.Id, productoDemanda, f.Necesario,
+                        f.Insumo.StockActual, "VENTA_INSTANTANEA");
+
                 throw new AppException(string.Join(" ", faltantes.Select(f =>
                     $"No hay existencias suficientes de '{f.Insumo.Nombre}': " +
                     $"hay {f.Insumo.StockActual} y se necesitan {f.Necesario}.")));
+            }
         }
 
         // La dirección solo es obligatoria si el pedido sí implica una entrega a domicilio.
@@ -338,9 +354,13 @@ public class OrderService : IOrderService
         // receta una sola vez, al liquidarse (RegistrarPagoAsync); nunca al preparar.
         var esVentaInstantanea = await _context.SolicitudesVentaInstantanea
             .AnyAsync(s => s.OrderId == order.Id);
+        // Pedido normal: lo prueba el hecho (la SALIDA de preparación ya escrita), no el estado
+        // anterior, que no distingue lo que pasó antes de PENDIENTE_ANULACION.
+        var motivoPreparacion = MotivoPreparacion(order.Id);
         var yaDescontoInventario = esVentaInstantanea
             ? order.SaldoPendiente == 0
-            : estadoAnterior == "EN_PREPARACION" || estadoAnterior == "EN_RUTA";
+            : await _context.InventoryMovements.AnyAsync(m =>
+                m.TipoMovimiento == "SALIDA" && m.Motivo == motivoPreparacion);
 
         // Una sola marca para el pedido y los insumos que toca: el delta de
         // inventario solo trae lo que tiene ActualizadoEn posterior a 'desde'.
@@ -351,7 +371,7 @@ public class OrderService : IOrderService
         var stockAntesVenta = new Dictionary<Guid, (InventoryItem Item, int StockAntes)>();
 
         // ── Descuento de inventario al entrar en preparación (pedidos no instantáneos) ──
-        if (nuevoEstado == "EN_PREPARACION" && estadoAnterior == "PENDIENTE_VALIDACION" && !esVentaInstantanea)
+        if (nuevoEstado == "EN_PREPARACION" && !esVentaInstantanea && !yaDescontoInventario)
         {
             var usuarioMov = usuarioMovimiento ?? throw new AppException(sinUsuarioMovimiento);
             foreach (var oi in order.OrderItems)
@@ -365,6 +385,7 @@ public class OrderService : IOrderService
                 {
                     var cantidadSalida = receta.CantidadRequerida * oi.Cantidad;
                     stockAntesVenta.TryAdd(receta.InventoryItemId, (receta.InventoryItem, receta.InventoryItem.StockActual));
+                    var existenciasAntes = receta.InventoryItem.StockActual;
                     receta.InventoryItem.StockActual -= cantidadSalida;
                     receta.InventoryItem.ActualizadoEn = ahora;
 
@@ -374,10 +395,12 @@ public class OrderService : IOrderService
                         InventoryItemId = receta.InventoryItemId,
                         TipoMovimiento  = "SALIDA",
                         Cantidad        = cantidadSalida,
-                        Motivo          = $"Preparación — Pedido {orderId}",
+                        Motivo          = motivoPreparacion,
                         MotivoCategoria = "VENTA",
                         UsuarioId       = usuarioMov,
-                        FechaHora       = _fechas.AhoraUtc()
+                        FechaHora       = _fechas.AhoraUtc(),
+                        StockAntes      = existenciasAntes,
+                        StockDespues    = receta.InventoryItem.StockActual
                     });
                 }
             }
@@ -397,6 +420,7 @@ public class OrderService : IOrderService
                 foreach (var receta in recetas)
                 {
                     var cantidadDevuelta = receta.CantidadRequerida * oi.Cantidad;
+                    var existenciasAntes = receta.InventoryItem.StockActual;
                     receta.InventoryItem.StockActual += cantidadDevuelta;
                     receta.InventoryItem.ActualizadoEn = ahora;
 
@@ -409,7 +433,9 @@ public class OrderService : IOrderService
                         Motivo          = $"Devolución por cancelación — Pedido {orderId}",
                         MotivoCategoria = "DEVOLUCION",
                         UsuarioId       = usuarioMov,
-                        FechaHora       = _fechas.AhoraUtc()
+                        FechaHora       = _fechas.AhoraUtc(),
+                        StockAntes      = existenciasAntes,
+                        StockDespues    = receta.InventoryItem.StockActual
                     });
                 }
             }
@@ -570,6 +596,7 @@ public class OrderService : IOrderService
                     {
                         var cantidadSalida = receta.CantidadRequerida * oi.Cantidad;
                         stockAntesVenta.TryAdd(receta.InventoryItemId, (receta.InventoryItem, receta.InventoryItem.StockActual));
+                        var existenciasAntes = receta.InventoryItem.StockActual;
                         receta.InventoryItem.StockActual -= cantidadSalida;
                         receta.InventoryItem.ActualizadoEn = ahora;
 
@@ -582,7 +609,9 @@ public class OrderService : IOrderService
                             Motivo          = $"Confirmación de pago — Venta instantánea pedido {orderId}",
                             MotivoCategoria = "VENTA",
                             UsuarioId       = usuarioMovimiento,
-                            FechaHora       = _fechas.AhoraUtc()
+                            FechaHora       = _fechas.AhoraUtc(),
+                            StockAntes      = existenciasAntes,
+                            StockDespues    = receta.InventoryItem.StockActual
                         });
 
                         _logger.LogInformation(
@@ -764,14 +793,16 @@ public class OrderService : IOrderService
     }
 
     /// <summary>
-    /// Los pedidos que un empleado puede ver hoy: los que capturó él durante el
-    /// día, más los que se entregan hoy sin importar quién los capturó.
+    /// Los pedidos que un empleado puede ver hoy: SOLO los suyos (los que él
+    /// atendió), y de ellos los que capturó durante el día más los que capturó
+    /// antes y se entregan hoy (la venta anticipada propia sigue funcionando el
+    /// día de la entrega).
     ///
-    /// Lo segundo es lo que hace funcionar las ventas anticipadas: un pedido que
-    /// se tomó la semana pasada tiene que poder moverse a EN_RUTA y ENTREGADO el
-    /// día que toca, y quien lo capturó puede estar descansando. A cambio, un
-    /// empleado ve el pedido ajeno del día — nada más: ni el histórico, ni los
-    /// gastos, ni los cortes de nadie.
+    /// Los pedidos de un compañero y los que llegan sin dueño (web, teléfono)
+    /// los atiende el administrador, aunque se entreguen hoy; para el empleado
+    /// no existen: ni en el listado, ni en el delta, ni por id, ni para moverlos
+    /// o cobrarlos (decisión del usuario D-1, 2026-10-23). Tampoco ve el
+    /// histórico, los gastos ni los cortes de nadie.
     /// </summary>
     private IQueryable<Order> QueryVisiblePorEmpleado(Guid usuarioId)
     {
@@ -780,10 +811,10 @@ public class OrderService : IOrderService
         return _context.Orders
             .Include(o => o.Customer)
             .Where(o => !o.Archivado)
-            .Where(o => (o.AtendidoPorUsuarioId == usuarioId &&
-                         o.FechaCreacion >= scope.InicioUtc &&
-                         o.FechaCreacion <  scope.FinUtc)
-                     || o.FechaEntrega == scope.Dia);
+            .Where(o => o.AtendidoPorUsuarioId == usuarioId &&
+                        ((o.FechaCreacion >= scope.InicioUtc &&
+                          o.FechaCreacion <  scope.FinUtc)
+                         || o.FechaEntrega == scope.Dia));
     }
 
     /// <summary>
@@ -939,25 +970,26 @@ public class OrderService : IOrderService
         // ── Validación de venta anticipada ────────────────────────────
         if (tipo.Equals("ANTICIPADO", StringComparison.OrdinalIgnoreCase) && !entregaInmediata)
         {
-            foreach (var item in items)
+            var validacion = await _availability.ValidarVentaAnticipadaAsync(
+                items.Select(i => (i.ProductId, i.Cantidad)).ToList(), fechaEntrega);
+
+            if (!validacion.PuedeAceptarse)
             {
-                var validacion = await _availability.ValidarVentaAnticipadaAsync(
-                    item.ProductId, item.Cantidad, fechaEntrega);
+                var productosPedido = items.Select(i => i.ProductId).Distinct().ToList();
+                Guid? productoDemanda = productosPedido.Count == 1 ? productosPedido[0] : null;
+                var sinTiempo = validacion.InsumosPorAbastecer.Where(i => i.Estado == "SIN_TIEMPO").ToList();
 
-                if (!validacion.PuedeAceptarse)
+                foreach (var ins in sinTiempo)
                 {
-                    foreach (var ins in validacion.InsumosPorAbastecer.Where(i => i.Estado == "SIN_TIEMPO"))
-                    {
-                        await _availability.RegistrarDemandaNoCubiertaAsync(
-                            ins.InventoryItemId, item.ProductId,
-                            ins.CantidadFaltante, 0, "VENTA_ANTICIPADA");
-                    }
-
-                    var fechaSugerida = validacion.FechaViableSugerida?.ToString("yyyy-MM-dd") ?? "N/A";
-                    throw new AppException(
-                        $"No hay disponibilidad suficiente para '{item.ProductId}' en la fecha solicitada. " +
-                        $"{validacion.Mensaje} Fecha sugerida: {fechaSugerida}.");
+                    await _availability.RegistrarDemandaNoCubiertaAsync(
+                        ins.InventoryItemId, productoDemanda,
+                        ins.CantidadFaltante, 0, "VENTA_ANTICIPADA");
                 }
+
+                var nombres = string.Join(", ", sinTiempo.Select(i => i.Nombre));
+                throw new AppException(
+                    $"No hay disponibilidad suficiente para la fecha solicitada (insumos: {nombres}). " +
+                    validacion.Mensaje);
             }
         }
 
@@ -1025,6 +1057,7 @@ public class OrderService : IOrderService
                 {
                     var cantidadSalida = receta.CantidadRequerida * oi.Cantidad;
                     stockAntesVenta.TryAdd(receta.InventoryItemId, (receta.InventoryItem, receta.InventoryItem.StockActual));
+                    var existenciasAntes = receta.InventoryItem.StockActual;
                     receta.InventoryItem.StockActual -= cantidadSalida;
                     receta.InventoryItem.ActualizadoEn = ahora;
 
@@ -1037,7 +1070,9 @@ public class OrderService : IOrderService
                         Motivo          = $"Venta de mostrador — Pedido {order.Id}",
                         MotivoCategoria = "VENTA",
                         UsuarioId       = atendidoPorUsuarioId.Value,
-                        FechaHora       = _fechas.AhoraUtc()
+                        FechaHora       = _fechas.AhoraUtc(),
+                        StockAntes      = existenciasAntes,
+                        StockDespues    = receta.InventoryItem.StockActual
                     });
 
                     _logger.LogInformation(
@@ -1147,11 +1182,12 @@ public class OrderService : IOrderService
             Total         = order.Total,
             Notas         = order.Notas,
             EsInstantanea = entregaInmediata,
+            DesdeSolicitudAceptada = solicitud != null,
         };
 
         // Pedido anticipado >= 7 dias: informativo al admin, sin modal bloqueante
         if (tipo.Equals("ANTICIPADO", StringComparison.OrdinalIgnoreCase)
-            && fechaEntrega >= DateOnly.FromDateTime(_fechas.AhoraUtc()).AddDays(7))
+            && fechaEntrega >= _fechas.HoyLocal().AddDays(7))
         {
             await _realtime.PedidoAnticipadoInformativoAsync(notifPedido);
             await AvisarPedidoNuevoWhatsAppAsync(notifPedido, anticipado: true);

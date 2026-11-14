@@ -13,6 +13,10 @@ public class InventoryMovement
     public string   MotivoCategoria   { get; set; } = "OTRO";
     public Guid     UsuarioId         { get; set; }
     public DateTime FechaHora         { get; set; } = DateTime.UtcNow;
+    // Existencias del insumo justo antes/después de este movimiento.
+    // null = movimiento anterior a la bitácora con existencias: sin dato (no se reconstruye).
+    public int?     StockAntes        { get; set; }
+    public int?     StockDespues      { get; set; }
 
     public InventoryItem InventoryItem { get; set; } = null!;
     public User          Usuario       { get; set; } = null!;

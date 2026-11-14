@@ -8,6 +8,7 @@ public interface IAvailabilityService
     Task<ProductAvailabilityDto>        ObtenerDisponibilidadProductoAsync(Guid productId);
     Task<SaleValidationResult>          ValidarVentaInstantaneaAsync(Guid productId, int cantidad);
     Task<AdvanceSaleValidationResult>   ValidarVentaAnticipadaAsync(Guid productId, int cantidad, DateOnly fechaEntrega);
+    Task<AdvanceSaleValidationResult>   ValidarVentaAnticipadaAsync(IReadOnlyList<(Guid ProductId, int Cantidad)> lineas, DateOnly fechaEntrega);
     Task<SupplyCycleDto>                ObtenerCicloAbastecimientoAsync();
     Task RegistrarDemandaNoCubiertaAsync(Guid inventoryItemId, Guid? productId, int solicitada, int disponible, string origen);
 }

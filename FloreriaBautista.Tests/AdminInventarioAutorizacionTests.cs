@@ -31,4 +31,19 @@ public class AdminInventarioAutorizacionTests
         Assert.NotNull(atributo);
         Assert.Equal("ADMIN,EMPLEADO", atributo!.Roles);
     }
+
+    // Decisión #8 (2026-10-27): la predicción de compras es solo para ADMIN.
+    [Theory]
+    [InlineData(nameof(AdminInventoryController.Forecast))]
+    [InlineData(nameof(AdminInventoryController.ObtenerReabastecimiento))]
+    [InlineData(nameof(AdminInventoryController.ObtenerPrediccionSurtido))]
+    public void Acciones_de_prediccion_exigen_solo_ADMIN(string nombreAccion)
+    {
+        var accion = typeof(AdminInventoryController).GetMethod(nombreAccion);
+
+        Assert.NotNull(accion);
+        var atributo = accion!.GetCustomAttribute<AuthorizeAttribute>();
+        Assert.NotNull(atributo);
+        Assert.Equal("ADMIN", atributo!.Roles);
+    }
 }
