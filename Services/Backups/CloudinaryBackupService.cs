@@ -36,7 +36,14 @@ public class CloudinaryBackupService
         var result = await cloudinary.UploadAsync(uploadParams);
 
         if (result.Error != null)
-            throw new Exception($"Error al subir a Cloudinary: {result.Error.Message}");
+        {
+            // El mensaje de Cloudinary repite la llave rechazada: se redacta antes de que viaje en la excepción.
+            var motivo = MensajeErrorSeguro.Redactar(
+                result.Error.Message,
+                Environment.GetEnvironmentVariable("CLOUDINARY_API_KEY"),
+                Environment.GetEnvironmentVariable("CLOUDINARY_API_SECRET"));
+            throw new Exception($"Error al subir a Cloudinary: {motivo}");
+        }
 
         _logger.LogInformation(
             "Backup subido a Cloudinary. PublicId: {PublicId} | Tamaño: {Bytes} bytes",

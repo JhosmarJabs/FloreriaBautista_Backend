@@ -67,7 +67,7 @@ public class AdminBackupsController : ControllerBase
         await _audit.RegistrarAsync("BACKUP_FULL", "BackupJob", resultado.Id.ToString(), usuarioId,
             new { resultado.RutaArchivoLocal, resultado.Estado, resultado.SubidoADrive, resultado.Descripcion });
 
-        return Ok(ApiResponseDto<BackupResponseDto>.Ok(resultado));
+        return Ok(RespuestaDeRespaldo(resultado));
     }
 
     // POST /api/admin/backups/tabla — backup de tabla específica, sube a Drive automáticamente
@@ -87,7 +87,24 @@ public class AdminBackupsController : ControllerBase
         await _audit.RegistrarAsync("BACKUP_TABLA", "BackupJob", resultado.Id.ToString(), usuarioId,
             new { resultado.RutaArchivoLocal, resultado.Estado, resultado.SubidoADrive, Tabla = request.NombreTabla, resultado.Descripcion });
 
-        return Ok(ApiResponseDto<BackupResponseDto>.Ok(resultado));
+        return Ok(RespuestaDeRespaldo(resultado));
+    }
+
+    // Un respaldo fallido no lanza excepción en el servicio: se devuelve con Estado = ERROR.
+    // Se responde HTTP 200 con success = false para que el panel muestre el motivo (MensajeError ya viene saneado).
+    private static ApiResponseDto<BackupResponseDto> RespuestaDeRespaldo(BackupResponseDto resultado)
+    {
+        if (!string.Equals(resultado.Estado, "ERROR", StringComparison.OrdinalIgnoreCase))
+            return ApiResponseDto<BackupResponseDto>.Ok(resultado);
+
+        return new ApiResponseDto<BackupResponseDto>
+        {
+            Success = false,
+            Message = string.IsNullOrWhiteSpace(resultado.MensajeError)
+                ? "El respaldo falló."
+                : $"El respaldo falló: {resultado.MensajeError}",
+            Data = resultado
+        };
     }
 
     private Guid? ObtenerUsuarioId()
