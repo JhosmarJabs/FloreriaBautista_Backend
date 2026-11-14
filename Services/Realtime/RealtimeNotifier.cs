@@ -10,6 +10,18 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FloreriaBautista.Services.Realtime;
 
+/// <summary>
+/// Mensaje que recibe el cliente dueño de la solicitud: solo lo que necesita su pantalla de espera,
+/// nunca el DTO de administración (datos del cliente, del empleado y del pedido).
+/// </summary>
+public record SolicitudDecididaPayload(
+    Guid Id, string Estado, string NombreProducto, int Cantidad,
+    string? MotivoRechazo, DateTime? ReservaExpiraEn)
+{
+    public static SolicitudDecididaPayload Desde(SolicitudVentaInstantaneaDto s) =>
+        new(s.Id, s.Estado, s.NombreProducto, s.Cantidad, s.MotivoRechazo, s.ReservaExpiraEn);
+}
+
 public class RealtimeNotifier : IRealtimeNotifier
 {
     private readonly IHubContext<VentaInstantaneaHub> _hub;
@@ -104,7 +116,7 @@ public class RealtimeNotifier : IRealtimeNotifier
             "SignalR → grupo solicitud-{Id}: SolicitudDecidida ({Estado})",
             solicitudId, solicitud.Estado);
         await _hub.Clients.Group($"solicitud-{solicitudId}")
-            .SendAsync("SolicitudDecidida", solicitud);
+            .SendAsync("SolicitudDecidida", SolicitudDecididaPayload.Desde(solicitud));
     }
 
     public async Task PedidoNuevoAsync(PedidoNuevoNotificacion notificacion)
@@ -117,10 +129,19 @@ public class RealtimeNotifier : IRealtimeNotifier
                 ["ADMIN", "EMPLEADO"],
                 "Order", notificacion.OrderId));
 
-        _logger.LogInformation(
-            "SignalR → grupo todos-empleados: PedidoNuevo {OrderId}", notificacion.OrderId);
-        await _hub.Clients.Group("todos-empleados")
-            .SendAsync("PedidoNuevo", notificacion);
+        // El aviso en vivo de 60 s es solo para pedidos nacidos de una solicitud aceptada.
+        if (notificacion.DesdeSolicitudAceptada)
+        {
+            _logger.LogInformation(
+                "SignalR → grupo todos-empleados: PedidoNuevo {OrderId}", notificacion.OrderId);
+            await _hub.Clients.Group("todos-empleados")
+                .SendAsync("PedidoNuevo", notificacion);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "SignalR: se omite PedidoNuevo en vivo {OrderId} (no viene de una solicitud aceptada)", notificacion.OrderId);
+        }
 
         // La venta de mostrador nace ENTREGADO: solo avisa al admin lo que queda por validar.
         if (!notificacion.EsInstantanea)

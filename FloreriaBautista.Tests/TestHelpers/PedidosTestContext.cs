@@ -80,8 +80,8 @@ public sealed class PedidosTestContext : IDisposable
         new(Db, Fechas, new AuditService(Db, NullLogger<AuditService>.Instance),
             NullLogger<OrderArchiver>.Instance);
 
-    public OrderService CrearOrderService() =>
-        new(Db, Fechas, new NullRealtimeNotifier(),
+    public OrderService CrearOrderService(IRealtimeNotifier? realtime = null) =>
+        new(Db, Fechas, realtime ?? new NullRealtimeNotifier(),
             new NotificationService(Db, NullLogger<NotificationService>.Instance),
             new PricingService(Db),
             new AvailabilityService(Db, Fechas, new MemoryCache(new MemoryCacheOptions()),
@@ -219,6 +219,20 @@ internal sealed class NullRealtimeNotifier : IRealtimeNotifier
     public Task SolicitudDecididaAsync(Guid solicitudId, SolicitudVentaInstantaneaDto solicitud) => Task.CompletedTask;
     public Task PedidoNuevoAsync(PedidoNuevoNotificacion notificacion) => Task.CompletedTask;
     public Task PedidoAnticipadoInformativoAsync(PedidoNuevoNotificacion notificacion) => Task.CompletedTask;
+    public Task ReporteErrorCreadoAsync(Guid reporteId, string tipoRegistro, string nombreEmpleado) => Task.CompletedTask;
+    public Task PedidoCambioEstadoAsync(Guid orderId, Guid empleadoId, string nuevoEstado) => Task.CompletedTask;
+}
+
+/// <summary>Notificador que registra los pedidos nuevos que recibe (para probar el filtro del aviso en vivo).</summary>
+internal sealed class RegistroRealtimeNotifier : IRealtimeNotifier
+{
+    public List<PedidoNuevoNotificacion> PedidosNuevos { get; } = [];
+    public List<PedidoNuevoNotificacion> Informativos { get; } = [];
+    public Task SolicitudPendienteAsync(SolicitudVentaInstantaneaDto solicitud) => Task.CompletedTask;
+    public Task SolicitudEscaladaAsync(SolicitudVentaInstantaneaDto solicitud, Guid responsableId) => Task.CompletedTask;
+    public Task SolicitudDecididaAsync(Guid solicitudId, SolicitudVentaInstantaneaDto solicitud) => Task.CompletedTask;
+    public Task PedidoNuevoAsync(PedidoNuevoNotificacion notificacion) { PedidosNuevos.Add(notificacion); return Task.CompletedTask; }
+    public Task PedidoAnticipadoInformativoAsync(PedidoNuevoNotificacion notificacion) { Informativos.Add(notificacion); return Task.CompletedTask; }
     public Task ReporteErrorCreadoAsync(Guid reporteId, string tipoRegistro, string nombreEmpleado) => Task.CompletedTask;
     public Task PedidoCambioEstadoAsync(Guid orderId, Guid empleadoId, string nuevoEstado) => Task.CompletedTask;
 }
