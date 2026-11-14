@@ -63,7 +63,8 @@ public class EmployeeExpenseService : IEmployeeExpenseService
             Estado         = "REGISTRADO",
             Notas          = request.Notas?.Trim(),
             IdLocalOffline = request.IdLocalOffline,
-            CapturadoEn    = request.CapturadoEn.HasValue ? fechaHora : null
+            CapturadoEn    = request.CapturadoEn.HasValue ? fechaHora : null,
+            ActualizadoEn  = DateTime.UtcNow
         };
 
         _context.Expenses.Add(gasto);

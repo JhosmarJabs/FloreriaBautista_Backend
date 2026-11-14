@@ -28,11 +28,15 @@ public class ExpenseConfiguration : IEntityTypeConfiguration<Expense>
                .HasForeignKey(e => e.CashCutId)
                .OnDelete(DeleteBehavior.SetNull);
 
+        builder.Property(e => e.ActualizadoEn).HasDefaultValueSql("NOW()");
+
         // El índice que sostiene la regla de aislamiento: toda consulta de un
         // empleado filtra por (usuario, día). Sin él, cada listado del móvil
         // termina en seq scan sobre la tabla general de gastos.
         builder.HasIndex(e => new { e.UsuarioId, e.FechaHora });
         builder.HasIndex(e => e.CashCutId);
+        builder.HasIndex(e => e.ActualizadoEn);
+        builder.HasIndex(e => new { e.UsuarioId, e.ActualizadoEn });
 
         // Idempotencia de la cola offline: un mismo gasto reenviado choca aquí.
         builder.HasIndex(e => e.IdLocalOffline).IsUnique().HasFilter("id_local_offline IS NOT NULL");
