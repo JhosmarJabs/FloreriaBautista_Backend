@@ -41,7 +41,7 @@ public class AuthService : IAuthService
 
         var roles = user.UserRoles.Select(ur => ur.Role.Nombre).ToList();
         var accessToken  = GenerarAccessToken(user, roles);
-        var refreshToken = await GuardarRefreshTokenAsync(user.Id);
+        var refreshToken = (await GuardarRefreshTokenAsync(user.Id)).Token; // inicia una familia nueva
 
         _logger.LogInformation("Login exitoso: {Correo}", user.Correo);
 
@@ -85,50 +85,163 @@ public class AuthService : IAuthService
     }
 
     // ── Refresh ───────────────────────────────────────────────────
+    // Renovación idempotente (plan sesion-renovacion-idempotente). La decisión la toma
+    // PoliticaRenovacion; aquí solo se lee el estado, se rota dentro de una transacción
+    // y se ejecutan las consecuencias. Todos los rechazos usan el mismo 401.
+    private const string MensajeRefreshInvalido = "Refresh token inválido o expirado.";
+
     public async Task<LoginResponseDto> RefreshAsync(string refreshToken)
     {
-        var ahora = DateTime.UtcNow;
+        var ventana   = LeerVentanaReusoSegundos();
+        var deteccion = LeerDeteccionReuso();
 
-        // Reclamo atómico: el UPDATE lleva la condición completa, así que de varias
-        // peticiones simultáneas con el mismo token solo una afecta la fila.
-        var reclamadas = await _context.AuthTokens
-            .Where(t => t.Token == refreshToken && t.Tipo == "REFRESH" &&
-                        !t.Usado && t.ExpiraEn > ahora)
-            .ExecuteUpdateAsync(s => s.SetProperty(t => t.Usado, true));
+        // Máximo dos pasadas: la segunda solo ocurre si otra petición ganó el canje.
+        for (var pasada = 0; pasada < 2; pasada++)
+        {
+            var ahora = DateTime.UtcNow;
+            var t = await LeerParaRenovarAsync(refreshToken);
+            var (decision, sucesor) = await DecidirAsync(t, ahora, ventana, deteccion);
 
-        if (reclamadas == 0)
-            throw new UnauthorizedException("Refresh token inválido o expirado.");
+            switch (decision)
+            {
+                case DecisionRenovacion.Rotar:
+                    if (pasada == 1) throw new UnauthorizedException(MensajeRefreshInvalido);
+                    var rotado = await RotarAsync(t!, ahora);
+                    if (rotado != null) return rotado;
+                    break; // otra petición ganó: reevaluar
 
-        var token = await _context.AuthTokens
+                case DecisionRenovacion.Reintentar:
+                {
+                    var user  = t!.User;
+                    var roles = user.UserRoles.Select(ur => ur.Role.Nombre).ToList();
+                    _logger.LogInformation(
+                        "Renovación idempotente: reintento dentro de la ventana. Usuario {UserId}, familia {FamiliaId}, {Segundos:0.0} s desde la rotación",
+                        user.Id, t.FamiliaId ?? t.Id, SegundosDesde(t.CerradoEn, ahora));
+                    return BuildLoginResponse(user, roles, GenerarAccessToken(user, roles), sucesor!.Token);
+                }
+
+                case DecisionRenovacion.ReusoDetectado:
+                {
+                    var familia = t!.FamiliaId ?? t.Id;
+                    var revocadas = await _context.AuthTokens
+                        .Where(x => x.UserId == t.UserId && x.Tipo == PoliticaRenovacion.TipoRefresh && !x.Usado &&
+                                    (x.FamiliaId == familia || x.Id == familia))
+                        .ExecuteUpdateAsync(x => x
+                            .SetProperty(r => r.Usado, true)
+                            .SetProperty(r => r.MotivoCierre, PoliticaRenovacion.ReusoDetectado)
+                            .SetProperty(r => r.CerradoEn, (DateTime?)ahora));
+                    _logger.LogWarning(
+                        "Reutilización de refresh token detectada. Usuario {UserId}, familia {FamiliaId}, {Segundos:0.0} s desde la rotación, {Revocadas} token(s) revocados",
+                        t.UserId, familia, SegundosDesde(t.CerradoEn, ahora), revocadas);
+                    throw new UnauthorizedException(MensajeRefreshInvalido);
+                }
+
+                default: // Rechazar
+                    // Cuenta desactivada: el token activo se cierra con su motivo (mismo 401 para el cliente).
+                    if (t != null && t.Tipo == PoliticaRenovacion.TipoRefresh && !t.Usado &&
+                        t.ExpiraEn > ahora && t.User.Estado != "ACTIVO")
+                    {
+                        await _context.AuthTokens
+                            .Where(x => x.Id == t.Id && !x.Usado)
+                            .ExecuteUpdateAsync(x => x
+                                .SetProperty(r => r.Usado, true)
+                                .SetProperty(r => r.MotivoCierre, PoliticaRenovacion.CuentaInactiva)
+                                .SetProperty(r => r.CerradoEn, (DateTime?)ahora));
+                    }
+                    throw new UnauthorizedException(MensajeRefreshInvalido);
+            }
+        }
+
+        throw new UnauthorizedException(MensajeRefreshInvalido);
+    }
+
+    /// <summary>Lee el token presentado sin seguimiento, con su usuario y roles.</summary>
+    private Task<AuthToken?> LeerParaRenovarAsync(string refreshToken) =>
+        _context.AuthTokens
+            .AsNoTracking()
             .Include(t => t.User).ThenInclude(u => u.UserRoles).ThenInclude(ur => ur.Role)
-            .FirstAsync(t => t.Token == refreshToken && t.Tipo == "REFRESH");
+            .FirstOrDefaultAsync(t => t.Token == refreshToken && t.Tipo == PoliticaRenovacion.TipoRefresh);
 
-        // Una cuenta desactivada no renueva (mismo mensaje para no distinguir el rechazo).
-        if (token.User.Estado != "ACTIVO")
-            throw new UnauthorizedException("Refresh token inválido o expirado.");
+    private async Task<(DecisionRenovacion Decision, AuthToken? Sucesor)> DecidirAsync(
+        AuthToken? t, DateTime ahora, int ventana, bool deteccion)
+    {
+        AuthToken? sucesor = null;
+        if (t != null && t.Usado && t.SucesorId.HasValue)
+        {
+            sucesor = await _context.AuthTokens.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == t.SucesorId.Value);
+        }
 
-        var user  = token.User;
-        var roles = user.UserRoles.Select(ur => ur.Role.Nombre).ToList();
-        var newAccess  = GenerarAccessToken(user, roles);
-        var newRefresh = await GuardarRefreshTokenAsync(user.Id);
+        var decision = PoliticaRenovacion.Decidir(
+            Resumir(t), Resumir(sucesor), t?.User.Estado == "ACTIVO", ahora, ventana, deteccion);
+        return (decision, sucesor);
+    }
 
-        return BuildLoginResponse(user, roles, newAccess, newRefresh);
+    private static TokenRenovacion? Resumir(AuthToken? t) =>
+        t == null ? null : new TokenRenovacion(t.Tipo, t.UserId, t.ExpiraEn, t.Usado, t.MotivoCierre, t.CerradoEn);
+
+    private static double SegundosDesde(DateTime? momento, DateTime ahora) =>
+        momento.HasValue ? (ahora - momento.Value).TotalSeconds : -1;
+
+    /// <summary>
+    /// Crea el sucesor y reclama T en una sola transacción. Devuelve null si otra petición
+    /// canjeó T primero (se revierte todo y el llamador reevalúa).
+    /// </summary>
+    private async Task<LoginResponseDto?> RotarAsync(AuthToken t, DateTime ahora)
+    {
+        await using var tx = await _context.Database.BeginTransactionAsync();
+
+        var sucesor = await GuardarRefreshTokenAsync(t.UserId, t.FamiliaId ?? t.Id);
+
+        var reclamadas = await _context.AuthTokens
+            .Where(x => x.Id == t.Id && !x.Usado && x.ExpiraEn > ahora)
+            .ExecuteUpdateAsync(x => x
+                .SetProperty(r => r.Usado, true)
+                .SetProperty(r => r.MotivoCierre, PoliticaRenovacion.Rotado)
+                .SetProperty(r => r.CerradoEn, (DateTime?)ahora)
+                .SetProperty(r => r.SucesorId, (Guid?)sucesor.Id));
+
+        if (reclamadas == 1)
+        {
+            await tx.CommitAsync();
+            var user  = t.User;
+            var roles = user.UserRoles.Select(ur => ur.Role.Nombre).ToList();
+            return BuildLoginResponse(user, roles, GenerarAccessToken(user, roles), sucesor.Token);
+        }
+
+        await tx.RollbackAsync();
+        _context.Entry(sucesor).State = EntityState.Detached;
+        return null;
     }
 
     // ── Logout ────────────────────────────────────────────────────
     public async Task LogoutAsync(string refreshToken)
     {
         var token = await _context.AuthTokens
-            .FirstOrDefaultAsync(t => t.Token == refreshToken && t.Tipo == "REFRESH");
-        if (token != null) { token.Usado = true; await _context.SaveChangesAsync(); }
+            .FirstOrDefaultAsync(t => t.Token == refreshToken && t.Tipo == PoliticaRenovacion.TipoRefresh);
+        if (token == null) return;
+
+        // Cierra toda la sesión (familia) del token presentado, incluido un sucesor vivo
+        // si el presentado ya estaba rotado. No pisa el motivo de los ya cerrados.
+        var ahora   = DateTime.UtcNow;
+        var familia = token.FamiliaId ?? token.Id;
+        var activos = await _context.AuthTokens
+            .Where(t => t.UserId == token.UserId && t.Tipo == PoliticaRenovacion.TipoRefresh && !t.Usado &&
+                        (t.FamiliaId == familia || t.Id == familia))
+            .ToListAsync();
+        foreach (var t in activos) Cerrar(t, PoliticaRenovacion.Logout, ahora);
+
+        if (!token.Usado) Cerrar(token, PoliticaRenovacion.Logout, ahora);
+        await _context.SaveChangesAsync();
     }
 
     public async Task LogoutAllAsync(Guid userId)
     {
+        var ahora = DateTime.UtcNow;
         var tokens = await _context.AuthTokens
-            .Where(t => t.UserId == userId && t.Tipo == "REFRESH" && !t.Usado)
+            .Where(t => t.UserId == userId && t.Tipo == PoliticaRenovacion.TipoRefresh && !t.Usado)
             .ToListAsync();
-        foreach (var t in tokens) t.Usado = true;
+        foreach (var t in tokens) Cerrar(t, PoliticaRenovacion.LogoutTodas, ahora);
 
         // Sin sesiones abiertas no debe llegar ningún push a sus teléfonos.
         var pushTokens = await _context.PushTokenDevices
@@ -137,6 +250,13 @@ public class AuthService : IAuthService
         _context.PushTokenDevices.RemoveRange(pushTokens);
 
         await _context.SaveChangesAsync();
+    }
+
+    private static void Cerrar(AuthToken t, string motivo, DateTime ahora)
+    {
+        t.Usado        = true;
+        t.MotivoCierre = motivo;
+        t.CerradoEn    = ahora;
     }
 
     // ── Forgot Password ───────────────────────────────────────────
@@ -190,9 +310,10 @@ public class AuthService : IAuthService
 
         // Invalidar todos los refresh tokens activos por seguridad
         var refreshTokens = await _context.AuthTokens
-            .Where(t => t.UserId == token.UserId && t.Tipo == "REFRESH" && !t.Usado)
+            .Where(t => t.UserId == token.UserId && t.Tipo == PoliticaRenovacion.TipoRefresh && !t.Usado)
             .ToListAsync();
-        foreach (var rt in refreshTokens) rt.Usado = true;
+        var ahoraReset = DateTime.UtcNow;
+        foreach (var rt in refreshTokens) Cerrar(rt, PoliticaRenovacion.ResetPassword, ahoraReset);
 
         await _context.SaveChangesAsync();
         _logger.LogInformation("Contraseña restablecida para usuario {Id}", token.UserId);
@@ -259,22 +380,42 @@ public class AuthService : IAuthService
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private async Task<string> GuardarRefreshTokenAsync(Guid userId)
+    /// <summary>
+    /// Crea un refresh token. Sin <paramref name="familiaId"/> (login) inicia una familia
+    /// nueva: su propio Id. En la rotación hereda la familia del token canjeado.
+    /// </summary>
+    private async Task<AuthToken> GuardarRefreshTokenAsync(Guid userId, Guid? familiaId = null)
     {
         var days  = int.TryParse(Environment.GetEnvironmentVariable("JWT_REFRESH_EXPIRATION_DAYS"), out var d) ? d : 365;
-        var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
-        _context.AuthTokens.Add(new AuthToken
+        var id    = Guid.NewGuid();
+        var token = new AuthToken
         {
-            Id       = Guid.NewGuid(),
-            UserId   = userId,
-            Token    = token,
-            Tipo     = "REFRESH",
-            ExpiraEn = DateTime.UtcNow.AddDays(days),
-            CreadoEn = DateTime.UtcNow
-        });
+            Id        = id,
+            UserId    = userId,
+            Token     = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64)),
+            Tipo      = PoliticaRenovacion.TipoRefresh,
+            ExpiraEn  = DateTime.UtcNow.AddDays(days),
+            CreadoEn  = DateTime.UtcNow,
+            FamiliaId = familiaId ?? id
+        };
+        _context.AuthTokens.Add(token);
         await _context.SaveChangesAsync();
         return token;
     }
+
+    // Ventana de reintento (segundos). 0 = rotación estricta. Ausente, no numérica o negativa
+    // = 60; mayor de 300 se acota a 300.
+    private static int LeerVentanaReusoSegundos()
+    {
+        const int porDefecto = 60;
+        if (!int.TryParse(Environment.GetEnvironmentVariable("JWT_REFRESH_REUSE_WINDOW_SECONDS"), out var v) || v < 0)
+            return porDefecto;
+        return Math.Min(v, 300);
+    }
+
+    // Detección de reutilización (revoca la familia). Por defecto activa.
+    private static bool LeerDeteccionReuso() =>
+        !bool.TryParse(Environment.GetEnvironmentVariable("JWT_REFRESH_REUSE_DETECTION"), out var v) || v;
 
     private static LoginResponseDto BuildLoginResponse(User user, List<string> roles, string access, string refresh) =>
         new()
