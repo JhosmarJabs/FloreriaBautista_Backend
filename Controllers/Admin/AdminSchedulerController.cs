@@ -5,6 +5,7 @@ using FloreriaBautista.Models.Entities;
 using FloreriaBautista.Services.Scheduler;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using FloreriaBautista.PlayReview;
 
 namespace FloreriaBautista.Controllers.Admin;
 
@@ -12,6 +13,7 @@ namespace FloreriaBautista.Controllers.Admin;
 [Tags("3. Sistema y Seguridad")]
 [Route("api/admin/scheduler")]
 [Authorize(Roles = "ADMIN")]
+[BloqueadoEnRevision] // play_review: 403 en la instancia de revisión
 public class AdminSchedulerController : ControllerBase
 {
     private readonly BackupSchedulerService _scheduler;

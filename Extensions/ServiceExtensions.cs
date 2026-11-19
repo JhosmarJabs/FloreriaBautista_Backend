@@ -16,6 +16,7 @@ using FloreriaBautista.Services.Realtime;
 using FloreriaBautista.Services.Recommendations;
 using FloreriaBautista.Services.WhatsApp;
 using FloreriaBautista.Services.Cms;
+using FloreriaBautista.PlayReview;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
@@ -105,9 +106,17 @@ public static class ServiceExtensions
         services.AddSingleton<IFechaHelper, FechaHelper>();
 
         // ── Tareas programadas (background) ───────────────────────
+        // play_review: la instancia de revisión no hace respaldos ni habla con WhatsApp.
+        // Los demás hosted services son internos a su propia base (archivado, expiración
+        // de ventas instantáneas, limpieza de tokens, segmentación) y se quedan.
+        var modoRevision = PlayReviewEntorno.EsModoRevision;
+
         // Registrar como singleton para poder inyectarlo en el controller
         services.AddSingleton<BackupSchedulerService>();
-        services.AddHostedService(sp => sp.GetRequiredService<BackupSchedulerService>());
+        if (!modoRevision)
+        {
+            services.AddHostedService(sp => sp.GetRequiredService<BackupSchedulerService>());
+        }
         // El archivador de pedidos: la regla es scoped (la usan el scheduler y el
         // endpoint manual), el hosted service solo la dispara cada hora.
         services.AddScoped<IOrderArchiver, OrderArchiver>();
@@ -144,10 +153,17 @@ public static class ServiceExtensions
             client.DefaultRequestHeaders.Add("sec-fetch-site", "none");
         });
         services.AddSingleton<WhatsAppVersionProvider>();
-        services.AddScoped<IWhatsAppNotifier, WhatsAppNotifier>();
         services.AddScoped<WhatsAppConnectionMonitor>();
-        services.AddHostedService<WhatsAppMonitorService>();
-        services.AddHostedService<WhatsAppDispatcherService>();
+        if (modoRevision)
+        {
+            services.AddScoped<IWhatsAppNotifier, WhatsAppNotifierRevision>();
+        }
+        else
+        {
+            services.AddScoped<IWhatsAppNotifier, WhatsAppNotifier>();
+            services.AddHostedService<WhatsAppMonitorService>();
+            services.AddHostedService<WhatsAppDispatcherService>();
+        }
         services.AddHostedService<AuthTokenCleanupService>();
 
         // TODO: Registrar aquí los demás módulos

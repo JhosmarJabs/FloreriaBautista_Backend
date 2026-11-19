@@ -8,6 +8,7 @@ using FloreriaBautista.Services.WhatsApp;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using FloreriaBautista.PlayReview;
 
 namespace FloreriaBautista.Controllers.Admin;
 
@@ -19,6 +20,7 @@ namespace FloreriaBautista.Controllers.Admin;
 [Tags("3. Sistema y Seguridad")]
 [Route("api/admin/whatsapp")]
 [Authorize(Roles = "ADMIN")]
+[BloqueadoEnRevision] // play_review: 403 en la instancia de revisión
 public class AdminWhatsAppController : ControllerBase
 {
     /// <summary>Estados que se pueden notificar (sin NO_COMPLETADO ni las variantes en femenino).</summary>

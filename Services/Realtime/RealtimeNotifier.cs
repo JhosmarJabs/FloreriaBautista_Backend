@@ -276,6 +276,16 @@ public class RealtimeNotifier : IRealtimeNotifier
         Func<AppDbContext, IQueryable<string>> destinatarios,
         Func<string, object> crearMensaje, string descripcion)
     {
+        // play_review: la instancia de revisión nunca llama a exp.host. Los tokens que
+        // registre el móvil de revisión son de teléfonos reales (los del revisor de
+        // Google); SignalR sí sigue, porque es interno a esta instancia.
+        if (PlayReview.PlayReviewEntorno.EsModoRevision)
+        {
+            _logger.LogInformation("{Prefijo} Push Expo omitido ({Descripcion})",
+                PlayReview.PlayReviewEntorno.PrefijoLog, descripcion);
+            return;
+        }
+
         try
         {
             using var scope = _scopeFactory.CreateScope();

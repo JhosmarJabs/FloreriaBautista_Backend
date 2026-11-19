@@ -1,0 +1,36 @@
+# play_review: resiembra diaria de la base de REVISIÓN (datos sintéticos).
+# El "día" del empleado (ventas, caja, gastos) se genera relativo a hoy, así que conviene
+# regenerarlo cada mañana. Está APAGADO hasta que exista la variable de repositorio
+# PLAY_REVIEW_RESEED = true. Secretos necesarios (Settings → Secrets and variables → Actions):
+#   REVIEW_DB_URL                    cadena de la rama de revisión con el rol floreria_review
+#   REVIEW_DB_NAME                   nombre de la base (confirmación de la guarda 4)
+#   PROD_DB_HOST                     host de producción (guarda 2; opcional pero recomendado)
+#   PLAY_REVIEW_CREDENCIALES_JSON    contenido completo del JSON de credenciales de revisión
+# Ver docs/play-review.md.
+name: Resiembra play_review
+
+on:
+  schedule:
+    - cron: '0 17 * * *'   # 11:00 en Ciudad de México
+  workflow_dispatch:
+
+jobs:
+  resembrar:
+    if: ${{ vars.PLAY_REVIEW_RESEED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Resembrar
+        env:
+          REVIEW_DB_URL: ${{ secrets.REVIEW_DB_URL }}
+          PROD_DB_HOST: ${{ secrets.PROD_DB_HOST }}
+          REVIEW_DB_NAME: ${{ secrets.REVIEW_DB_NAME }}
+          CREDENCIALES: ${{ secrets.PLAY_REVIEW_CREDENCIALES_JSON }}
+        run: |
+          ruta="$RUNNER_TEMP/credenciales-revision.local.json"
+          printf '%s' "$CREDENCIALES" > "$ruta"
+          trap 'rm -f "$ruta"' EXIT
+          dotnet run --project tools/PlayReviewSeed -c Release -- --credenciales "$ruta" --confirmar "$REVIEW_DB_NAME" --reiniciar

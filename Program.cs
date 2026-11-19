@@ -5,6 +5,7 @@ using FloreriaBautista.Extensions;
 using FloreriaBautista.Hubs;
 using FloreriaBautista.Json;
 using FloreriaBautista.Middleware;
+using FloreriaBautista.PlayReview;
 using Microsoft.Net.Http.Headers;
 
 // Carga el archivo .env según el entorno.
@@ -63,10 +64,39 @@ builder.Services.AddCors(options =>
     });
 });
 
+// play_review: decide el papel de este proceso (borde en PROD, modo revisión en REVIEW
+// o ninguno). Va antes de AddApplicationServices porque REVIEW cambia registros ahí.
+// Una instancia de revisión mal configurada lanza aquí y no arranca. Ver docs/play-review.md.
+var (bordeRevision, modoRevision) = builder.Services.AddPlayReview(builder.Environment);
+
 builder.Services.AddApplicationServices(builder.Configuration);
 builder.Services.AddSwaggerDocumentation();
 
 var app = builder.Build();
+
+if (modoRevision.Activo)
+{
+    // REVIEW: primero la firma del borde (nadie entra directo), luego la auditoría
+    // [play_review] y el bloqueo de operaciones de infraestructura.
+    app.Logger.LogWarning("[play_review] Instancia de REVISIÓN activa: firma de borde obligatoria, " +
+        "WhatsApp, push de Expo, respaldos y Mercado Pago apagados.");
+    app.UseMiddleware<PlayReviewFirmaBordeMiddleware>();
+    app.UseMiddleware<PlayReviewAuditoriaMiddleware>();
+    app.UseMiddleware<PlayReviewBloqueoMiddleware>();
+}
+else if (bordeRevision.Activo)
+{
+    // PROD: el enrutador de borde va ANTES que todo (incluido Datadog y RequestLogging),
+    // para que una petición de revisión no deje en PROD ni traza con su URL, ni log, ni
+    // toque la autenticación o la base: se reenvía a REVIEW y termina aquí.
+    app.Logger.LogInformation("[play_review-borde] Enrutador de borde activo hacia {Upstream}", bordeRevision.UpstreamUrl);
+    app.UseMiddleware<PlayReviewEdgeRouter>();
+}
+else if (PlayReviewServiceExtensions.HayVariablesDeBorde())
+{
+    // Variables a medias o inválidas: PROD sigue normal y se avisa por qué.
+    app.Logger.LogError("[play_review-borde] Enrutador de borde INACTIVO: {Motivo}", bordeRevision.MotivoInactivo);
+}
 
 app.UseMiddleware<DatadogTracingMiddleware>(); 
 app.UseMiddleware<ExceptionMiddleware>();
@@ -99,7 +129,12 @@ app.Use((context, next) =>
 
 app.UseCors("DefaultPolicy");
 app.UseHttpsRedirection();
-app.UseMiddleware<AlexaApiKeyMiddleware>();
+// Alexa no existe en revisión: su middleware crea un ADMIN sintético con una API key
+// y en REVIEW esa variable está prohibida (AlexaController además está bloqueado).
+if (!modoRevision.Activo)
+{
+    app.UseMiddleware<AlexaApiKeyMiddleware>();
+}
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

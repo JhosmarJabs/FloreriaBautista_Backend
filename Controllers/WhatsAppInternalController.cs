@@ -6,6 +6,7 @@ using FloreriaBautista.Services.WhatsApp;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using FloreriaBautista.PlayReview;
 
 namespace FloreriaBautista.Controllers;
 
@@ -18,6 +19,7 @@ namespace FloreriaBautista.Controllers;
 [ApiExplorerSettings(IgnoreApi = true)]
 [Route("api/internal/whatsapp")]
 [AllowAnonymous]
+[BloqueadoEnRevision] // play_review: 403 en la instancia de revisión
 public class WhatsAppInternalController : ControllerBase
 {
     private readonly AppDbContext                         _context;

@@ -262,7 +262,7 @@ public class AuthService : IAuthService
     private async Task<string> GuardarRefreshTokenAsync(Guid userId)
     {
         var days  = int.TryParse(Environment.GetEnvironmentVariable("JWT_REFRESH_EXPIRATION_DAYS"), out var d) ? d : 365;
-        var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+        var token = GenerarValorRefresh(PlayReview.PlayReviewEntorno.EsModoRevision);
         _context.AuthTokens.Add(new AuthToken
         {
             Id       = Guid.NewGuid(),
@@ -274,6 +274,18 @@ public class AuthService : IAuthService
         });
         await _context.SaveChangesAsync();
         return token;
+    }
+
+    /// <summary>
+    /// Valor opaco del refresh token. En la instancia de revisión lleva el prefijo
+    /// <c>rv_</c>: es la señal con la que el borde de PROD reenvía el refresh a REVIEW
+    /// sin consultar ninguna base. La búsqueda sigue siendo por igualdad exacta del
+    /// valor guardado, así que el prefijo no cambia nada más.
+    /// </summary>
+    public static string GenerarValorRefresh(bool modoRevision)
+    {
+        var valor = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+        return modoRevision ? PlayReview.PlayReviewEntorno.PrefijoRefresh + valor : valor;
     }
 
     private static LoginResponseDto BuildLoginResponse(User user, List<string> roles, string access, string refresh) =>

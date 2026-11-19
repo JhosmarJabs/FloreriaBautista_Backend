@@ -31,3 +31,7 @@ TokenResponse*
 Migrations/
 .env.develop
 .env.prod.local
+
+# play_review: credenciales de revisión y cualquier archivo local con secretos
+*.local.json
+credenciales-revision*.json

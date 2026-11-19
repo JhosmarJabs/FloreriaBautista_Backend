@@ -3,12 +3,14 @@ using FloreriaBautista.Models.DTOs.ImportExport;
 using FloreriaBautista.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using FloreriaBautista.PlayReview;
 
 namespace FloreriaBautista.Controllers.Admin;
 
 [ApiController]
 [Tags("3. Sistema y Seguridad")]
 [Authorize(Roles = "ADMIN")]
+[BloqueadoEnRevision] // play_review: 403 en la instancia de revisión
 public class AdminImportExportController : ControllerBase
 {
     private readonly IExportService _exportService;

@@ -7,6 +7,7 @@ using FloreriaBautista.Services.Interfaces;
 using FloreriaBautista.Services.WhatsApp;
 using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Models.DTOs.Inventory;
+using FloreriaBautista.PlayReview;
 
 namespace FloreriaBautista.Controllers;
 
@@ -14,6 +15,7 @@ namespace FloreriaBautista.Controllers;
 [Tags("Alexa Integration")]
 [Route("api/alexa")]
 [Authorize(Roles = "ADMIN")]
+[BloqueadoEnRevision] // play_review: 403 en la instancia de revisión
 public class AlexaController : ControllerBase
 {
     private readonly AppDbContext _context;

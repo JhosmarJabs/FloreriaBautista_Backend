@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Herramienta de siembra del entorno play_review (datos 100 % sintéticos).
+    Uso (opciones credenciales, confirmar y reiniciar): ver docs/play-review.md.
+    La conexión sale SOLO de la variable REVIEW_DB_URL. Ver docs/play-review.md.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>FloreriaBautista.PlayReviewSeed</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Mismas entidades y el mismo AppDbContext que la app: las llaves foráneas, los
+         nombres snake_case y el esquema salen del modelo, no de una copia a mano. -->
+    <ProjectReference Include="..\..\FloreriaBautista.csproj" />
+  </ItemGroup>
+</Project>
