@@ -6,12 +6,14 @@ using FloreriaBautista.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using FloreriaBautista.PlayReview;
 
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
 [Tags("Pagos")]
 [Route("api/payments/mercadopago")]
+[BloqueadoEnRevision] // play_review: 403 en la instancia de revisión
 public class PaymentsController : ControllerBase
 {
     private readonly IMercadoPagoService _mp;

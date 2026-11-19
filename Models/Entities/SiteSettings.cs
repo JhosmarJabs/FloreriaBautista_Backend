@@ -11,6 +11,11 @@ public class SiteSettings
     public string  Direccion       { get; set; } = string.Empty;
     public string  DireccionUrl    { get; set; } = string.Empty;
 
+    // ── Datos legales del negocio (los usan las páginas legales) ─────
+    public string? RazonSocial      { get; set; }
+    public string? Rfc              { get; set; }
+    public string? CorreoPrivacidad { get; set; }
+
     // ── Redes sociales ───────────────────────────────────────────────
     public string  FacebookUrl     { get; set; } = string.Empty;
     public string  InstagramUrl    { get; set; } = string.Empty;

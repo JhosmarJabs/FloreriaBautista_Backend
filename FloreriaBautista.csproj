@@ -17,6 +17,12 @@
     <EmbeddedResource Remove="scratch\**" />
     <None Remove="scratch\**" />
     <Content Remove="scratch\**" />
+    <!-- tools/: herramientas de consola con su propio .csproj (p. ej. PlayReviewSeed).
+         No forman parte del binario del backend ni de la imagen publicada. -->
+    <Compile Remove="tools\**" />
+    <EmbeddedResource Remove="tools\**" />
+    <None Remove="tools\**" />
+    <Content Remove="tools\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -37,5 +43,7 @@
     <PackageReference Include="Google.Apis.Auth" Version="1.*" />
     <!-- Cloudinary SDK (subida firmada de respaldos raw) -->
     <PackageReference Include="CloudinaryDotNet" Version="1.*" />
+    <!-- play_review: reenvío del borde de PROD a la instancia de revisión (IHttpForwarder) -->
+    <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
   </ItemGroup>
 </Project>

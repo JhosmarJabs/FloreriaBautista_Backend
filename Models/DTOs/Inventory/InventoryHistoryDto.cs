@@ -22,6 +22,7 @@ public class WeeklyHistoryDto
     public int Consumed { get; set; }
     public int Restock { get; set; }
     public int Merma { get; set; }
+    public int DemandaRechazada { get; set; }
 }
 
 public class MonthlyHistoryDto

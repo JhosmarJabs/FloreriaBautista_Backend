@@ -20,6 +20,7 @@ public class InstantSaleService : IInstantSaleService
     private readonly IFechaHelper                _fechas;
     private readonly IAuditService               _audit;
     private readonly IRealtimeNotifier           _realtime;
+    private readonly IAvailabilityService        _availability;
     private readonly ILogger<InstantSaleService> _logger;
 
     public InstantSaleService(
@@ -27,13 +28,15 @@ public class InstantSaleService : IInstantSaleService
         IFechaHelper fechas,
         IAuditService audit,
         IRealtimeNotifier realtime,
+        IAvailabilityService availability,
         ILogger<InstantSaleService> logger)
     {
-        _context  = context;
-        _fechas   = fechas;
-        _audit    = audit;
-        _realtime = realtime;
-        _logger   = logger;
+        _context      = context;
+        _fechas       = fechas;
+        _audit        = audit;
+        _realtime     = realtime;
+        _availability = availability;
+        _logger       = logger;
     }
 
     public async Task<InstantSaleResponseDto> CrearSolicitudAsync(
@@ -76,23 +79,12 @@ public class InstantSaleService : IInstantSaleService
             return MapToDto(rechazada, product.Nombre);
         }
 
-        // ── Validar receta: debe existir exactamente una fila con flor primaria ──
-        var recetaFlorPrimaria = product.ProductRecipes
-            .FirstOrDefault(pr => pr.InventoryItem.EsFlorPrimaria);
+        // ── Validar disponibilidad contra TODA la receta ──────────────
+        var validacion = await _availability.ValidarVentaInstantaneaAsync(
+            product.Id, request.Cantidad);
 
-        if (recetaFlorPrimaria == null)
-        {
-            throw new AppException(
-                "El producto no tiene una flor primaria definida en su receta. " +
-                "No se puede calcular el limite de venta instantanea.");
-        }
-
-        // ── Calcular limite efectivo ──────────────────────────────────
-        var limiteEfectivo = await CalcularLimiteEfectivoInternoAsync(
-            product, recetaFlorPrimaria);
-
-        // ── Rechazo automatico: cantidad excede limite ────────────────
-        if (request.Cantidad > limiteEfectivo)
+        // ── Rechazo automatico: cantidad excede disponibilidad ────────
+        if (!validacion.PuedeVenderse)
         {
             var rechazada = new SolicitudVentaInstantanea
             {
@@ -108,9 +100,15 @@ public class InstantSaleService : IInstantSaleService
             _context.SolicitudesVentaInstantanea.Add(rechazada);
             await _context.SaveChangesAsync();
 
+            foreach (var ins in validacion.InsumosInsuficientes)
+            {
+                await _availability.RegistrarDemandaNoCubiertaAsync(
+                    ins.InventoryItemId, product.Id, ins.Necesario, ins.Disponible, "VENTA_INSTANTANEA");
+            }
+
             _logger.LogInformation(
-                "Solicitud {Id} rechazada: cantidad {Cantidad} excede limite efectivo {Limite} para producto {ProductId}",
-                rechazada.Id, request.Cantidad, limiteEfectivo, request.ProductId);
+                "Solicitud {Id} rechazada: cantidad {Cantidad} excede disponibilidad {Disponible} para producto {ProductId}",
+                rechazada.Id, request.Cantidad, validacion.CantidadMaximaDisponible, request.ProductId);
 
             return MapToDto(rechazada, product.Nombre);
         }
@@ -155,61 +153,13 @@ public class InstantSaleService : IInstantSaleService
 
     public async Task<int> CalcularLimiteEfectivoAsync(Guid productId)
     {
-        var product = await _context.Products
-            .Include(p => p.ProductRecipes)
-                .ThenInclude(pr => pr.InventoryItem)
-            .FirstOrDefaultAsync(p => p.Id == productId);
+        var disp = await _availability.ObtenerDisponibilidadProductoAsync(productId);
+        if (!disp.TieneReceta) return 0;
 
-        if (product == null)
-            throw new NotFoundException("Producto", productId);
+        var product = await _context.Products.FindAsync(productId);
+        var limiteProducto = product?.LimiteVentaInstantanea ?? int.MaxValue;
 
-        var recetaFlorPrimaria = product.ProductRecipes
-            .FirstOrDefault(pr => pr.InventoryItem.EsFlorPrimaria);
-
-        if (recetaFlorPrimaria == null)
-            return 0;
-
-        return await CalcularLimiteEfectivoInternoAsync(product, recetaFlorPrimaria);
-    }
-
-    // ── Calculo interno del limite efectivo ───────────────────────────
-    // disponible = InventoryItem.StockActual
-    //            - SUM(Cantidad * CantidadRequerida) de solicitudes ACEPTADAS
-    //              con ReservaExpiraEn > ahora, para ese InventoryItemId
-    // limiteEfectivo = MIN(LimiteVentaInstantanea ?? int.MaxValue,
-    //                      disponible / CantidadRequerida)
-    private async Task<int> CalcularLimiteEfectivoInternoAsync(
-        Product product,
-        ProductRecipe recetaFlorPrimaria)
-    {
-        var inventoryItemId = recetaFlorPrimaria.InventoryItemId;
-        var cantidadRequerida = recetaFlorPrimaria.CantidadRequerida;
-        var stockActual = recetaFlorPrimaria.InventoryItem.StockActual;
-        var ahora = DateTime.UtcNow;
-
-        // Sumar las unidades reservadas por solicitudes ACEPTADAS vigentes
-        // que usen el mismo insumo (flor primaria) via su receta de producto.
-        var reservado = await _context.SolicitudesVentaInstantanea
-            .Where(s => s.Estado == "ACEPTADA"
-                     && s.ReservaExpiraEn != null
-                     && s.ReservaExpiraEn > ahora)
-            .Join(
-                _context.ProductRecipes
-                    .Where(pr => pr.InventoryItemId == inventoryItemId),
-                s => s.ProductId,
-                pr => pr.ProductId,
-                (s, pr) => new { s.Cantidad, pr.CantidadRequerida })
-            .SumAsync(x => x.Cantidad * x.CantidadRequerida);
-
-        var disponible = stockActual - reservado;
-
-        if (disponible <= 0 || cantidadRequerida <= 0)
-            return 0;
-
-        var limitePorStock = disponible / cantidadRequerida;
-        var limiteProducto = product.LimiteVentaInstantanea ?? int.MaxValue;
-
-        return Math.Max(0, Math.Min(limiteProducto, limitePorStock));
+        return Math.Max(0, Math.Min(limiteProducto, disp.CantidadDisponible));
     }
 
     // ── Bloque 3: Aceptar ───────────────────────────────────────────

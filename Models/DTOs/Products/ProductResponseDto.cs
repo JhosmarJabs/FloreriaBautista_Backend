@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace FloreriaBautista.Models.DTOs.Products;
 
 public class ProductResponseDto
@@ -12,7 +14,9 @@ public class ProductResponseDto
     public string       Visibilidad      { get; set; } = string.Empty;
     public string?      ImagenUrl        { get; set; }
     public bool         Activo           { get; set; }
-    public bool         EsReal           { get; set; }
+    // Solo lo asigna MapToDto (admin); en el detalle público queda null y no se serializa.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool?        EsReal           { get; set; }
     public bool         PermiteVentaInstantanea { get; set; }
     public int?         LimiteVentaInstantanea  { get; set; }
     public List<string> Categorias       { get; set; } = [];

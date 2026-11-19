@@ -17,5 +17,9 @@ public class InventoryMovementConfiguration : IEntityTypeConfiguration<Inventory
                .HasMaxLength(20)
                .HasDefaultValue("OTRO");
         builder.Property(m => m.FechaHora).HasDefaultValueSql("NOW()");
+        builder.Property(m => m.StockAntes)
+               .HasComment("Existencias del insumo antes del movimiento. NULL = movimiento anterior a la bitácora con existencias (sin dato).");
+        builder.Property(m => m.StockDespues)
+               .HasComment("Existencias del insumo después del movimiento. NULL = movimiento anterior a la bitácora con existencias (sin dato).");
     }
 }

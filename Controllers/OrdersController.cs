@@ -66,8 +66,9 @@ public class OrdersController : ControllerBase
             .Select(c => c.Value).ToList();
 
         // El admin mueve cualquier pedido; el empleado, solo los de su día.
+        // Quien actúa firma los movimientos de inventario del cambio.
         var order = await _orderService.CambiarEstadoAsync(
-            orderId, request, roles, RestriccionDelEmpleado());
+            orderId, request, roles, RestriccionDelEmpleado(), ObtenerUsuarioId());
         return Ok(ApiResponseDto<OrderResponseDto>.Ok(order, "Pedido actualizado (estado)."));
     }
 
@@ -76,7 +77,9 @@ public class OrdersController : ControllerBase
     [Authorize(Roles = "ADMIN,EMPLEADO")]
     public async Task<IActionResult> RegistrarPago(Guid orderId, [FromBody] RegisterPaymentRequestDto request)
     {
-        var order = await _orderService.RegistrarPagoAsync(orderId, request, RestriccionDelEmpleado());
+        // Quien registra el pago queda en la bitácora.
+        var order = await _orderService.RegistrarPagoAsync(
+            orderId, request, RestriccionDelEmpleado(), ObtenerUsuarioId());
         return Ok(ApiResponseDto<OrderResponseDto>.Ok(order, "Pago registrado correctamente."));
     }
 

@@ -5,5 +5,5 @@ namespace FloreriaBautista.Services.Interfaces;
 public interface IPricingService
 {
     Task<PricingBreakdownDto> CalcularTotalAsync(
-        List<PricingItemDto> items, string? codigoCupon = null);
+        List<PricingItemDto> items, string? codigoCupon = null, Guid? usuarioId = null);
 }

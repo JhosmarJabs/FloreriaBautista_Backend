@@ -54,6 +54,25 @@ public class NotificationService : INotificationService
         _logger.LogInformation("Notificación {Tipo} creada para {Count} usuario(s)", tipo, destinatarios.Count);
     }
 
+    public async Task CrearParaUsuarioAsync(Guid usuarioId, string tipo, string titulo,
+        string mensaje, string? entidadTipo = null, Guid? entidadId = null)
+    {
+        _context.Notifications.Add(new Notification
+        {
+            Id                    = Guid.NewGuid(),
+            DestinatarioUsuarioId = usuarioId,
+            Tipo                  = tipo,
+            Titulo                = titulo,
+            Mensaje               = mensaje,
+            EntidadTipo           = entidadTipo,
+            EntidadId             = entidadId,
+            CreadaEn              = DateTime.UtcNow,
+        });
+
+        await _context.SaveChangesAsync();
+        _logger.LogInformation("Notificación {Tipo} creada para usuario {UsuarioId}", tipo, usuarioId);
+    }
+
     public async Task CrearParaClienteAsync(Guid customerId, string tipo, string titulo,
         string mensaje, string? entidadTipo = null, Guid? entidadId = null)
     {
@@ -76,6 +95,9 @@ public class NotificationService : INotificationService
     public async Task<PagedResultDto<NotificationDto>> ListarAsync(
         Guid? usuarioId, Guid? customerId, bool soloNoLeidas, int page, int size)
     {
+        page = Math.Max(1, page);
+        size = Math.Clamp(size, 1, 100);
+
         var query = BuildQuery(usuarioId, customerId);
 
         if (soloNoLeidas)

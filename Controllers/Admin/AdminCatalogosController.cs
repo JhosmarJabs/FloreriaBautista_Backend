@@ -1,4 +1,5 @@
 using FloreriaBautista.Data;
+using FloreriaBautista.Helpers;
 using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Models.DTOs.Products;
 using FloreriaBautista.Models.Entities;
@@ -73,6 +74,14 @@ public class AdminCatalogosController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Crear([FromBody] Catalogo request)
     {
+        request.MesDiaInicio = MesDia.Normalizar(request.MesDiaInicio);
+        request.MesDiaFin = MesDia.Normalizar(request.MesDiaFin);
+        if ((request.MesDiaInicio != null && !MesDia.EsValido(request.MesDiaInicio))
+            || (request.MesDiaFin != null && !MesDia.EsValido(request.MesDiaFin)))
+        {
+            return BadRequest(ApiResponseDto<object>.Fail(MesDia.MensajeInvalido));
+        }
+
         request.Id = Guid.NewGuid();
         request.CreadoEn = DateTime.UtcNow;
         request.ActualizadoEn = DateTime.UtcNow;
@@ -85,6 +94,14 @@ public class AdminCatalogosController : ControllerBase
     [HttpPost("{id:guid}")]
     public async Task<IActionResult> Actualizar(Guid id, [FromBody] Catalogo request)
     {
+        request.MesDiaInicio = MesDia.Normalizar(request.MesDiaInicio);
+        request.MesDiaFin = MesDia.Normalizar(request.MesDiaFin);
+        if ((request.MesDiaInicio != null && !MesDia.EsValido(request.MesDiaInicio))
+            || (request.MesDiaFin != null && !MesDia.EsValido(request.MesDiaFin)))
+        {
+            return BadRequest(ApiResponseDto<object>.Fail(MesDia.MensajeInvalido));
+        }
+
         var item = await _context.Catalogos
             .Include(c => c.ProductCatalogos)
             .FirstOrDefaultAsync(c => c.Id == id);

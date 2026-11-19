@@ -3,12 +3,14 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
+using FloreriaBautista.PlayReview;
 
 namespace FloreriaBautista.Controllers;
 
 [ApiController]
 [Tags("Desarrollo")]
 [Route("api/dev")]
+[BloqueadoEnRevision] // play_review: 403 en la instancia de revisión
 public class DevController : ControllerBase
 {
     private readonly IWebHostEnvironment _env;

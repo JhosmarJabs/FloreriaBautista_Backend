@@ -11,6 +11,7 @@ public class InventoryDailySnapshot
     public int StockFinal { get; set; }
     public int CantidadVendida { get; set; } // Suma de movimientos de SALIDA ese día
     public int CantidadRecibida { get; set; } // Suma de movimientos de ENTRADA ese día
+    public int DemandaRechazada { get; set; } // Demanda no cubierta consolidada del día
 
     [ForeignKey("InventoryItemId")]
     public InventoryItem InventoryItem { get; set; } = null!;

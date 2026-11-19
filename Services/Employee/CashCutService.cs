@@ -101,6 +101,9 @@ public class CashCutService : ICashCutService
     public async Task<PagedResultDto<CashCutDto>> ListarAdminAsync(
         Guid? usuarioId, DateOnly? desde, DateOnly? hasta, int page, int size)
     {
+        page = Math.Max(1, page);
+        size = Math.Clamp(size, 1, 100);
+
         var query = _context.CashCuts.Include(c => c.Usuario).AsQueryable();
 
         if (usuarioId.HasValue) query = query.Where(c => c.UsuarioId  == usuarioId.Value);
@@ -155,13 +158,14 @@ public class CashCutService : ICashCutService
 
         // Efectivo: los cobros reales, no el total facturado. Un pedido anticipado
         // puede haber dejado solo un anticipo, y lo que tiene que cuadrar contra la
-        // caja es el dinero que entró, no lo que se vendió.
+        // caja es el dinero que entró, no lo que se vendió. Cuenta el efectivo que
+        // este empleado cobró, sin importar quién capturó el pedido.
         var pagosEfectivo = _context.Payments
             .Where(p => p.Metodo    == "EFECTIVO"
                      && p.Estado    == "REGISTRADO"
                      && p.FechaPago >= scope.InicioUtc
                      && p.FechaPago <  scope.FinUtc
-                     && p.Order.AtendidoPorUsuarioId == scope.UsuarioId);
+                     && p.RegistradoPorUsuarioId == scope.UsuarioId);
 
         var totalEfectivo = await pagosEfectivo.AnyAsync()
             ? await pagosEfectivo.SumAsync(p => p.Monto)

@@ -1,4 +1,5 @@
 using FloreriaBautista.Data;
+using FloreriaBautista.Helpers;
 using FloreriaBautista.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,10 +13,12 @@ namespace FloreriaBautista.Controllers;
 public class CatalogosController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly ILogger<CatalogosController> _logger;
 
-    public CatalogosController(AppDbContext context)
+    public CatalogosController(AppDbContext context, ILogger<CatalogosController> logger)
     {
         _context = context;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -72,48 +75,70 @@ public class CatalogosController : ControllerBase
             .ToListAsync();
 
         var hoy = DateTime.UtcNow;
-        var resultado = catalogos
-            .Select(c =>
+        var resultado = new List<(Guid Id, string Nombre, string? Descripcion, string? ImagenUrl,
+            string ProximoInicio, string ProximoFin, int DiasParaInicio, bool EnCurso)>();
+        foreach (var c in catalogos)
+        {
+            // Un catalogo con ventana invalida (dato heredado) se omite, no tumba la respuesta.
+            if (!MesDia.EsValido(c.MesDiaInicio) || !MesDia.EsValido(c.MesDiaFin))
             {
-                var (proximoInicio, proximoFin) = CalcularProximaOcurrencia(
-                    c.MesDiaInicio!, c.MesDiaFin!, hoy);
-                var diasFaltan = proximoInicio.DayNumber - DateOnly.FromDateTime(hoy).DayNumber;
-                return new
-                {
-                    c.Id, c.Nombre, c.Descripcion, c.ImagenUrl,
-                    ProximoInicio = proximoInicio.ToString("yyyy-MM-dd"),
-                    ProximoFin = proximoFin.ToString("yyyy-MM-dd"),
-                    DiasParaInicio = diasFaltan,
-                    EnCurso = diasFaltan <= 0
-                        && DateOnly.FromDateTime(hoy) <= proximoFin
-                };
+                _logger.LogWarning("Catalogo {CatalogoId} omitido en temporadas-proximas: ventana MM-DD invalida.", c.Id);
+                continue;
+            }
+            var (proximoInicio, proximoFin) = CalcularProximaOcurrencia(
+                c.MesDiaInicio!, c.MesDiaFin!, hoy);
+            var diasFaltan = proximoInicio.DayNumber - DateOnly.FromDateTime(hoy).DayNumber;
+            resultado.Add((c.Id, c.Nombre, c.Descripcion, c.ImagenUrl,
+                proximoInicio.ToString("yyyy-MM-dd"), proximoFin.ToString("yyyy-MM-dd"),
+                diasFaltan,
+                diasFaltan <= 0 && DateOnly.FromDateTime(hoy) <= proximoFin));
+        }
+        var resultadoFinal = resultado
+            .Select(x => new
+            {
+                x.Id, x.Nombre, x.Descripcion, x.ImagenUrl,
+                ProximoInicio = x.ProximoInicio,
+                ProximoFin = x.ProximoFin,
+                DiasParaInicio = x.DiasParaInicio,
+                EnCurso = x.EnCurso
             })
             .Where(x => x.DiasParaInicio <= 60 || x.EnCurso)
             .OrderBy(x => x.DiasParaInicio)
             .ToList();
 
-        return Ok(resultado);
+        return Ok(resultadoFinal);
     }
 
     private static (DateOnly inicio, DateOnly fin) CalcularProximaOcurrencia(
         string mesDiaInicio, string mesDiaFin, DateTime ahora)
     {
-        var partsI = mesDiaInicio.Split('-');
-        var partsF = mesDiaFin.Split('-');
-        int mesI = int.Parse(partsI[0]), diaI = int.Parse(partsI[1]);
-        int mesF = int.Parse(partsF[0]), diaF = int.Parse(partsF[1]);
+        // Los llamadores ya validaron con MesDia.EsValido; aqui no se lanza por formato.
+        MesDia.TryParse(mesDiaInicio, out var mesI, out var diaI);
+        MesDia.TryParse(mesDiaFin, out var mesF, out var diaF);
+
+        static DateOnly Fecha(int a, int m, int d) =>
+            new DateOnly(a, m, Math.Min(d, DateTime.DaysInMonth(a, m)));
 
         var anio = ahora.Year;
-        var inicio = new DateOnly(anio, mesI, Math.Min(diaI, DateTime.DaysInMonth(anio, mesI)));
-        var fin    = new DateOnly(anio, mesF, Math.Min(diaF, DateTime.DaysInMonth(anio, mesF)));
-
-        if (fin < inicio) fin = fin.AddYears(1);
-
         var hoyDate = DateOnly.FromDateTime(ahora);
+        var inicio = Fecha(anio, mesI, diaI);
+        var fin    = Fecha(anio, mesF, diaF);
+
+        if (fin < inicio)
+        {
+            // La ventana cruza el 31 de diciembre: la ocurrencia que empezo el
+            // año anterior (inicio año-1 -> fin año) puede contener a "hoy".
+            var finPrev = fin;
+            if (hoyDate <= finPrev)
+                return (Fecha(anio - 1, mesI, diaI), finPrev);
+
+            fin = Fecha(anio + 1, mesF, diaF);
+        }
+
         if (fin < hoyDate)
         {
-            inicio = inicio.AddYears(1);
-            fin    = fin.AddYears(1);
+            inicio = Fecha(anio + 1, mesI, diaI);
+            fin    = Fecha(anio + 1, mesF, diaF);
         }
 
         return (inicio, fin);
@@ -126,6 +151,14 @@ public class CatalogosController : ControllerBase
         if (request == null)
         {
             return BadRequest(new { mensaje = "Los datos del catálogo son requeridos." });
+        }
+
+        request.MesDiaInicio = MesDia.Normalizar(request.MesDiaInicio);
+        request.MesDiaFin = MesDia.Normalizar(request.MesDiaFin);
+        if ((request.MesDiaInicio != null && !MesDia.EsValido(request.MesDiaInicio))
+            || (request.MesDiaFin != null && !MesDia.EsValido(request.MesDiaFin)))
+        {
+            return BadRequest(new { mensaje = MesDia.MensajeInvalido });
         }
 
         request.Id = Guid.NewGuid();

@@ -9,6 +9,7 @@ using FloreriaBautista.Models.Entities;
 using FloreriaBautista.Models.Exceptions;
 using FloreriaBautista.Services.Interfaces;
 using FloreriaBautista.Services.Notifications;
+using FloreriaBautista.Services.WhatsApp;
 
 namespace FloreriaBautista.Services;
 
@@ -20,6 +21,8 @@ public class InventoryService : IInventoryService
     private readonly IMemoryCache              _cache;
     private readonly IFechaHelper              _fechas;
     private readonly INotificationService      _notificaciones;
+    private readonly IForecastService          _forecastService;
+    private readonly IWhatsAppNotifier         _whatsApp;
 
     private static readonly Regex _nonAlphaNumRegex = new(@"[^a-z0-9\s]", RegexOptions.Compiled);
 
@@ -30,14 +33,17 @@ public class InventoryService : IInventoryService
 
     public InventoryService(AppDbContext context, ILogger<InventoryService> logger,
                             IMlPredictionClient mlClient, IMemoryCache cache,
-                            IFechaHelper fechas, INotificationService notificaciones)
+                            IFechaHelper fechas, INotificationService notificaciones,
+                            IForecastService forecastService, IWhatsAppNotifier whatsApp)
     {
-        _context        = context;
-        _logger         = logger;
-        _mlClient       = mlClient;
-        _cache          = cache;
-        _fechas         = fechas;
-        _notificaciones = notificaciones;
+        _context         = context;
+        _logger          = logger;
+        _mlClient        = mlClient;
+        _cache           = cache;
+        _fechas          = fechas;
+        _notificaciones  = notificaciones;
+        _forecastService = forecastService;
+        _whatsApp        = whatsApp;
     }
 
     // ── Listar ────────────────────────────────────────────────────
@@ -71,6 +77,7 @@ public class InventoryService : IInventoryService
         var total = await query.CountAsync();
         var paginado = await query
             .OrderBy(i => i.Nombre)
+            .ThenBy(i => i.Id)
             .Skip((page - 1) * size)
             .Take(size)
             .Select(i => new InventoryItemDto
@@ -90,7 +97,8 @@ public class InventoryService : IInventoryService
                 FactorMermaUso      = i.FactorMermaUso,
                 PrecioUnidadCompra  = i.PrecioUnidadCompra,
                 UnidadCompra        = i.UnidadCompra,
-                VidaUtilDias        = i.VidaUtilDias
+                VidaUtilDias        = i.VidaUtilDias,
+                ActualizadoEn       = i.ActualizadoEn
             })
             .ToListAsync();
 
@@ -348,6 +356,9 @@ public class InventoryService : IInventoryService
             throw new AppException(
                 $"Stock insuficiente. Stock actual: {stockAntes}, se intenta retirar: {cantidad}");
 
+        // Existencias tras aplicar el movimiento principal (antes de la merma automática).
+        var stockTrasMovimiento = item.StockActual;
+
         // Conteo físico por debajo de lo esperado: hay merma de manipulación que el
         // factor actual no estaba capturando bien. Se recalibra con la fracción
         // perdida de esta observación (promedio móvil, ver RecalibrarEma) para que
@@ -367,7 +378,9 @@ public class InventoryService : IInventoryService
             Motivo          = request.Motivo,
             MotivoCategoria = categoria,
             UsuarioId       = usuarioId,
-            FechaHora       = DateTime.UtcNow
+            FechaHora       = DateTime.UtcNow,
+            StockAntes      = stockAntes,
+            StockDespues    = stockTrasMovimiento
         };
         _context.InventoryMovements.Add(movimiento);
 
@@ -386,6 +399,7 @@ public class InventoryService : IInventoryService
             {
                 item.StockActual -= mermaEstimada;
                 mermaGenerada = mermaEstimada;
+                var stockTrasMerma = item.StockActual;
 
                 _context.InventoryMovements.Add(new InventoryMovement
                 {
@@ -396,7 +410,9 @@ public class InventoryService : IInventoryService
                     Motivo          = $"Merma de manipulación estimada ({item.FactorMermaUso:P0})",
                     MotivoCategoria = "MANIPULACION",
                     UsuarioId       = usuarioId,
-                    FechaHora       = DateTime.UtcNow
+                    FechaHora       = DateTime.UtcNow,
+                    StockAntes      = stockTrasMovimiento,
+                    StockDespues    = stockTrasMerma
                 });
             }
         }
@@ -407,32 +423,8 @@ public class InventoryService : IInventoryService
         _logger.LogInformation("Movimiento {Tipo}/{Categoria} en item {Id}: {Antes}→{Despues} (merma auto: {Merma})",
             tipo, categoria, item.Id, stockAntes, item.StockActual, mermaGenerada ?? 0);
 
-        // STOCK_BAJO: solo en la transición de por-encima a por-debajo del mínimo,
-        // y suprimido si ya existe una notificación no leída reciente (24h).
-        if (item.StockMinimo > 0
-            && stockAntes > item.StockMinimo
-            && item.StockActual <= item.StockMinimo)
-        {
-            try
-            {
-                var yaNotificado = await _notificaciones.ExisteNoLeidaRecienteAsync(
-                    "STOCK_BAJO", item.Id, TimeSpan.FromHours(24));
-
-                if (!yaNotificado)
-                {
-                    await _notificaciones.CrearParaUsuariosAsync(
-                        "STOCK_BAJO",
-                        $"Stock bajo: {item.Nombre}",
-                        $"{item.Nombre} bajó a {item.StockActual} {item.UnidadMedida ?? "u"} (mínimo: {item.StockMinimo}).",
-                        ["ADMIN", "EMPLEADO"],
-                        "InventoryItem", item.Id);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error al notificar STOCK_BAJO para insumo {Id}", item.Id);
-            }
-        }
+        // STOCK_BAJO: la regla vive en StockBajoAviso (compartida con las salidas por venta).
+        await StockBajoAviso.NotificarSiCruzoMinimoAsync(item, stockAntes, _notificaciones, _whatsApp, _logger);
 
         return new InventoryMovementDto
         {
@@ -495,6 +487,8 @@ public class InventoryService : IInventoryService
                 Cantidad        = m.Cantidad,
                 Motivo          = m.Motivo,
                 MotivoCategoria = m.MotivoCategoria,
+                StockAntes      = m.StockAntes,
+                StockDespues    = m.StockDespues,
                 FechaHora       = m.FechaHora
             })
             .ToListAsync();
@@ -536,7 +530,11 @@ public class InventoryService : IInventoryService
                     .Sum(m => (int?)m.Cantidad) ?? 0,
                 CantidadRecibida = i.InventoryMovements
                     .Where(m => m.TipoMovimiento == "ENTRADA" && m.FechaHora >= inicioDia && m.FechaHora <= finDia)
-                    .Sum(m => (int?)m.Cantidad) ?? 0
+                    .Sum(m => (int?)m.Cantidad) ?? 0,
+                DemandaRechazada = _context.UncoveredDemands
+                    .Where(d => d.InventoryItemId == i.Id
+                             && d.FechaRegistro >= inicioDia && d.FechaRegistro <= finDia)
+                    .Sum(d => (int?)d.Deficit) ?? 0
             })
             .ToListAsync();
 
@@ -549,7 +547,8 @@ public class InventoryService : IInventoryService
                 Fecha            = hoy,
                 StockFinal       = d.StockActual,
                 CantidadVendida  = d.CantidadVendida,
-                CantidadRecibida = d.CantidadRecibida
+                CantidadRecibida = d.CantidadRecibida,
+                DemandaRechazada = d.DemandaRechazada
             });
         }
 
@@ -578,6 +577,26 @@ public class InventoryService : IInventoryService
             Nota     = s.CantidadRecibida > 0 ? $"Reabasto (+{s.CantidadRecibida})" : null
         }).ToList();
 
+        // Merma por día: movimientos SALIDA con motivo MANIPULACION o CADUCIDAD
+        var fechaMin = snapshots.Count > 0 ? snapshots[0].Fecha : _fechas.HoyLocal();
+        var fechaMax = snapshots.Count > 0 ? snapshots[^1].Fecha : _fechas.HoyLocal();
+        var mermaMovimientos = await _context.InventoryMovements
+            .Where(m => m.InventoryItemId == inventoryItemId
+                     && m.TipoMovimiento == "SALIDA"
+                     && (m.MotivoCategoria == "MANIPULACION" || m.MotivoCategoria == "CADUCIDAD")
+                     && m.FechaHora >= _fechas.InicioDelDiaUtc(fechaMin)
+                     && m.FechaHora <= _fechas.InicioDelDiaUtc(fechaMax.AddDays(1)))
+            .Select(m => new { m.FechaHora, m.Cantidad })
+            .ToListAsync();
+
+        var mermaPorSemana = mermaMovimientos
+            .GroupBy(m => {
+                var local = _fechas.ALocal(m.FechaHora);
+                var week = System.Globalization.ISOWeek.GetWeekOfYear(local);
+                return $"{local.Year}-W{week:D2}";
+            })
+            .ToDictionary(g => g.Key, g => g.Sum(m => m.Cantidad));
+
         // 2. Semanal (Agrupado por semana ISO)
         result.Semanal = snapshots
             .GroupBy(s => {
@@ -587,11 +606,12 @@ public class InventoryService : IInventoryService
             })
             .Select(g => new WeeklyHistoryDto
             {
-                Week     = g.Key,
-                Label    = $"Sem {g.Key.Split("-W")[1]}",
-                Consumed = g.Sum(s => s.CantidadVendida),
-                Restock  = g.Sum(s => s.CantidadRecibida),
-                Merma    = 0 // TODO: Implementar lógica de merma si se requiere
+                Week             = g.Key,
+                Label            = $"Sem {g.Key.Split("-W")[1]}",
+                Consumed         = g.Sum(s => s.CantidadVendida),
+                Restock          = g.Sum(s => s.CantidadRecibida),
+                Merma            = mermaPorSemana.GetValueOrDefault(g.Key, 0),
+                DemandaRechazada = g.Sum(s => s.DemandaRechazada)
             })
             .ToList();
 
@@ -826,13 +846,11 @@ public class InventoryService : IInventoryService
         {
             try
             {
-                var f = await ObtenerPrediccionSurtidoAsync(id);
+                var f = await _forecastService.GenerarRecomendacionAsync(id);
 
-                // Política de compra: surtir hasta cubrir el consumo predicho O, si el insumo está
-                // por debajo del mínimo, al menos reponer hasta el stock mínimo. Se toma el mayor de
-                // los dos, para que un insumo bajo mínimo con consumo bajo igual se sugiera comprar.
-                var objetivo         = Math.Max(f.ConsumoPredicho, stockMin[id]);
-                var cantidadSugerida = Math.Max(0, objetivo - f.StockActual);
+                // CantidadRecomendada ya viene neta de stock: no se vuelve a restar.
+                var faltaParaMinimo  = Math.Max(0, stockMin[id] - f.StockActual);
+                var cantidadSugerida = Math.Max(f.CantidadRecomendada, faltaParaMinimo);
 
                 lista.Add(new SupplyReplenishmentItemDto
                 {
@@ -844,14 +862,13 @@ public class InventoryService : IInventoryService
                     ConsumoPredicho   = f.ConsumoPredicho,
                     CantidadSugerida  = cantidadSugerida,
                     SemanaObjetivo    = f.SemanaObjetivo,
-                    TemporadaObjetivo = f.TemporadaObjetivo,
+                    TemporadaObjetivo = f.Factores.TemporadaDetectada,
                     BajoMinimo        = f.StockActual <= stockMin[id],
                 });
             }
             catch (Exception ex)
             {
-                // Un insumo que falle (p. ej. el sidecar rechaza sus variables) no debe tumbar la lista.
-                _logger.LogWarning(ex, "No se pudo predecir el surtido del insumo {Id} para reabastecimiento", id);
+                _logger.LogWarning(ex, "No se pudo generar recomendación para el insumo {Id}", id);
             }
         }
 
@@ -1100,7 +1117,8 @@ public class InventoryService : IInventoryService
         FactorMermaUso      = i.FactorMermaUso,
         PrecioUnidadCompra  = i.PrecioUnidadCompra,
         UnidadCompra        = i.UnidadCompra,
-        VidaUtilDias        = i.VidaUtilDias
+        VidaUtilDias        = i.VidaUtilDias,
+        ActualizadoEn       = i.ActualizadoEn
     };
 }
 

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace FloreriaBautista.Models.DTOs.Products;
 
 public class ProductSummaryDto
@@ -10,5 +12,7 @@ public class ProductSummaryDto
     public string? ImagenUrl { get; set; }
     public bool    Activo    { get; set; }
     public int?    Stock     { get; set; }
-    public bool    EsReal    { get; set; }
+    // Solo lo asignan las rutas admin; en público/empleado queda null y no se serializa.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool?   EsReal    { get; set; }
 }

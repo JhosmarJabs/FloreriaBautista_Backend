@@ -10,9 +10,13 @@ using FloreriaBautista.Services;
 using FloreriaBautista.Services.Audit;
 using FloreriaBautista.Services.ImportExport;
 using FloreriaBautista.Services.Reports;
+using FloreriaBautista.Services.Eventos;
 using FloreriaBautista.Services.Notifications;
 using FloreriaBautista.Services.Realtime;
 using FloreriaBautista.Services.Recommendations;
+using FloreriaBautista.Services.WhatsApp;
+using FloreriaBautista.Services.Cms;
+using FloreriaBautista.PlayReview;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
@@ -82,13 +86,8 @@ public static class ServiceExtensions
         // ── SignalR (tiempo real) ─────────────────────────────────
         services.AddSignalR();
         services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<ISolicitudEventoService, SolicitudEventoService>();
         services.AddScoped<IRealtimeNotifier, RealtimeNotifier>();
-
-        services.AddCors(opt =>
-            opt.AddPolicy("AllowFrontend", p =>
-                p.WithOrigins("http://localhost:5173", "https://floreriabautista.com")
-                 .AllowAnyHeader()
-                 .AllowAnyMethod()));
 
         // ── Servicios de backups ───────────────────────────────────
         services.AddScoped<GoogleDriveService>();
@@ -107,9 +106,17 @@ public static class ServiceExtensions
         services.AddSingleton<IFechaHelper, FechaHelper>();
 
         // ── Tareas programadas (background) ───────────────────────
+        // play_review: la instancia de revisión no hace respaldos ni habla con WhatsApp.
+        // Los demás hosted services son internos a su propia base (archivado, expiración
+        // de ventas instantáneas, limpieza de tokens, segmentación) y se quedan.
+        var modoRevision = PlayReviewEntorno.EsModoRevision;
+
         // Registrar como singleton para poder inyectarlo en el controller
         services.AddSingleton<BackupSchedulerService>();
-        services.AddHostedService(sp => sp.GetRequiredService<BackupSchedulerService>());
+        if (!modoRevision)
+        {
+            services.AddHostedService(sp => sp.GetRequiredService<BackupSchedulerService>());
+        }
         // El archivador de pedidos: la regla es scoped (la usan el scheduler y el
         // endpoint manual), el hosted service solo la dispara cada hora.
         services.AddScoped<IOrderArchiver, OrderArchiver>();
@@ -120,6 +127,43 @@ public static class ServiceExtensions
         services.AddScoped<IInstantSaleExpirer, InstantSaleExpirer>();
         services.AddHostedService<InstantSaleExpirerService>();
         services.AddHostedService<PredictiveModelsSchedulerService>();
+
+        // ── WhatsApp (Evolution API, Web Service gratuito de Render con URL pública) ────
+        // Sin EVOLUTION_API_URL / EVOLUTION_API_KEY la integración queda deshabilitada: los
+        // hosted services salen al arrancar y el encolado no hace nada.
+        var whatsAppConfig = new WhatsAppConfig();
+        services.AddSingleton(whatsAppConfig);
+        services.AddSingleton<WhatsAppEstadoActual>();
+        services.AddHttpClient<IEvolutionClient, EvolutionClient>(client =>
+        {
+            if (whatsAppConfig.ApiUrl is not null)
+            {
+                var baseUrl = whatsAppConfig.ApiUrl.ToString();
+                client.BaseAddress = new Uri(baseUrl.EndsWith('/') ? baseUrl : baseUrl + "/");
+                client.DefaultRequestHeaders.Add("apikey", whatsAppConfig.ApiKey);
+            }
+            client.Timeout = TimeSpan.FromSeconds(15);
+        });
+        services.AddHttpClient(WhatsAppVersionProvider.NombreHttpClient, client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36");
+            // Sin esta cabecera web.whatsapp.com responde 400 (Baileys la manda igual).
+            client.DefaultRequestHeaders.Add("sec-fetch-site", "none");
+        });
+        services.AddSingleton<WhatsAppVersionProvider>();
+        services.AddScoped<WhatsAppConnectionMonitor>();
+        if (modoRevision)
+        {
+            services.AddScoped<IWhatsAppNotifier, WhatsAppNotifierRevision>();
+        }
+        else
+        {
+            services.AddScoped<IWhatsAppNotifier, WhatsAppNotifier>();
+            services.AddHostedService<WhatsAppMonitorService>();
+            services.AddHostedService<WhatsAppDispatcherService>();
+        }
         services.AddHostedService<AuthTokenCleanupService>();
 
         // TODO: Registrar aquí los demás módulos
@@ -131,8 +175,11 @@ public static class ServiceExtensions
         services.AddScoped<IImportService, ImportService>();
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<IOrderService, OrderService>();
+        services.AddSingleton<CuponIntentosLimiter>();
         services.AddScoped<IPricingService, PricingService>();
         services.AddScoped<IInstantSaleService, InstantSaleService>();
+        services.AddScoped<IAvailabilityService, AvailabilityService>();
+        services.AddScoped<IForecastService, ForecastService>();
 
         // ── Alcance del empleado (app móvil interna) ───────────────
         // El aislamiento por empleado y por día vive dentro de estos servicios,
@@ -148,6 +195,7 @@ public static class ServiceExtensions
         services.AddScoped<Services.Reports.SalesReportsService>();
         services.AddScoped<Services.Reports.PeopleReportsService>();
         services.AddScoped<CmsService>();
+        services.AddScoped<ContenidoLegalService>();
 
         // ── Modelos predictivos ─────────────────────────────────────
         // Solución 1 (regresión): la inferencia vive en el sidecar ml-service, que carga

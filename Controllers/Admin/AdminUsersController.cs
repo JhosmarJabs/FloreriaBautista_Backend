@@ -6,6 +6,7 @@ using FloreriaBautista.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using FloreriaBautista.PlayReview;
 
 namespace FloreriaBautista.Controllers.Admin;
 
@@ -19,6 +20,7 @@ public class AdminUsersController : ControllerBase
     public AdminUsersController(AppDbContext context) => _context = context;
 
     // POST /api/admin/users — crear usuario interno con roles
+    [BloqueadoEnRevision] // play_review: gestión de usuarios y roles
     [HttpPost]
     public async Task<IActionResult> Crear([FromBody] CreateInternalUserRequestDto request)
     {
@@ -169,13 +171,18 @@ public class AdminUsersController : ControllerBase
             Apellido         = user.Apellido,
             Correo           = user.Correo,
             Telefono         = user.Telefono,
+            Sexo             = user.Sexo,
+            FechaNacimiento  = user.FechaNacimiento,
             Estado           = user.Estado,
+            CorreoVerificado = user.CorreoVerificado,
+            EsResponsableTurno = user.EsResponsableTurno,
             Roles            = user.UserRoles.Select(ur => ur.Role.Nombre).ToList(),
             CreadoEn         = user.CreadoEn
         }));
     }
 
     // POST /api/admin/users/{userId}/responsable-turno — asignar privilegio
+    [BloqueadoEnRevision] // play_review: gestión de usuarios y roles
     [HttpPost("{userId:guid}/responsable-turno")]
     public async Task<IActionResult> AsignarResponsableTurno(Guid userId)
     {
@@ -205,6 +212,8 @@ public class AdminUsersController : ControllerBase
             {
                 anterior.EsResponsableTurno = false;
                 anterior.ActualizadoEn = DateTime.UtcNow;
+                // Persistir primero: el indice unico parcial se evalua por sentencia
+                await _context.SaveChangesAsync();
             }
 
             user.EsResponsableTurno = true;
@@ -223,6 +232,7 @@ public class AdminUsersController : ControllerBase
     }
 
     // DELETE /api/admin/users/responsable-turno — quitar privilegio
+    [BloqueadoEnRevision] // play_review: gestión de usuarios y roles
     [HttpDelete("responsable-turno")]
     public async Task<IActionResult> QuitarResponsableTurno()
     {
@@ -238,6 +248,7 @@ public class AdminUsersController : ControllerBase
     }
 
     // POST /api/admin/users/{userId:guid} — actualizar perfil, estado y roles (Admin)
+    [BloqueadoEnRevision] // play_review: gestión de usuarios y roles
     [HttpPost("{userId:guid}")]
     public async Task<IActionResult> Actualizar(Guid userId, [FromBody] UpdateUserRequestDto request)
     {

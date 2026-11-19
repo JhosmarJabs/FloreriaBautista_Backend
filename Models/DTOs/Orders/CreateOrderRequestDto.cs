@@ -14,6 +14,8 @@ public class CreateOrderRequestDto
 
     public string?             CodigoCupon { get; set; }
 
+    public Guid?               SolicitudVentaInstantaneaId { get; set; }
+
     [Required] public DireccionDto Direccion { get; set; } = null!;
     [Required] [MinLength(1)]
     public List<OrderItemRequestDto> Items   { get; set; } = [];
@@ -44,6 +46,18 @@ public class CreatePhysicalOrderRequestDto
     public decimal?            CostoEnvio   { get; set; }
     // UUID generado en el cliente para deduplicación offline-first.
     public Guid?               IdLocalOffline { get; set; }
+    // true cuando la venta se capturó sin conexión y llega por la cola de
+    // sincronización: se acepta aunque ya no haya existencias (las flores ya
+    // se entregaron) y queda constancia para que el admin ajuste el inventario.
+    public bool                VentaSincronizadaSinConexion { get; set; }
+    // Instante de captura en el dispositivo (venta offline). Define a qué corte
+    // pertenece la venta; el servidor lo valida (ventana de 48 h) y no lo toma
+    // como autoridad.
+    public DateTime?           CapturadoEn   { get; set; }
+    // Total que vio el empleado al capturar. Si no coincide con el recalculado
+    // con precios vigentes, la venta se rechaza (409) para que la revise.
+    [Range(0, double.MaxValue)]
+    public decimal?            TotalCapturado { get; set; }
 }
 
 public class DireccionDto

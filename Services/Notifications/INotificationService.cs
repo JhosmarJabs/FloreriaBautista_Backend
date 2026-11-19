@@ -8,6 +8,9 @@ public interface INotificationService
     Task CrearParaUsuariosAsync(string tipo, string titulo, string mensaje,
         string[] roles, string? entidadTipo = null, Guid? entidadId = null);
 
+    Task CrearParaUsuarioAsync(Guid usuarioId, string tipo, string titulo,
+        string mensaje, string? entidadTipo = null, Guid? entidadId = null);
+
     Task CrearParaClienteAsync(Guid customerId, string tipo, string titulo,
         string mensaje, string? entidadTipo = null, Guid? entidadId = null);
 

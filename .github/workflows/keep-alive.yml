@@ -11,3 +11,10 @@ jobs:
     steps:
       - name: Ping backend
         run: curl -sf --max-time 30 https://floreriabautista-backend.onrender.com/api/ping
+      # play_review: mantiene despierta la instancia de revisión. La URL va en el secreto
+      # REVIEW_PING_URL (https://<servicio-review>.onrender.com/api/ping); sin él, se omite.
+      - name: Ping instancia de revisión
+        env:
+          REVIEW_PING_URL: ${{ secrets.REVIEW_PING_URL }}
+        run: |
+          if [ -n "$REVIEW_PING_URL" ]; then curl -sf --max-time 60 "$REVIEW_PING_URL" > /dev/null; else echo "REVIEW_PING_URL no configurado: se omite"; fi

@@ -83,8 +83,9 @@ public class OrderArchiver : IOrderArchiver
                 resultado.RequierenCierre++;
             }
 
-            pedido.Archivado   = true;
-            pedido.ArchivadoEn = ahora;
+            pedido.Archivado     = true;
+            pedido.ArchivadoEn   = ahora;
+            pedido.ActualizadoEn = ahora; // sin esto el archivado no llega al delta
 
             transiciones.Add((pedido.Id, estadoAnterior, pedido.EstadoPedido, pedido.FechaEntrega));
         }

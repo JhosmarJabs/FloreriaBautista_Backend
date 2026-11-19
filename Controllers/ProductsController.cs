@@ -54,7 +54,7 @@ public class ProductsController : ControllerBase
     // GET /api/products/recomendados?ids=guid1,guid2,guid3
     // Misma recomendación pero para todo el carrito (varios productos de contexto a la vez).
     [HttpGet("recomendados")]
-    public async Task<IActionResult> RecomendadosPorCarrito([FromQuery] string ids, [FromQuery] int top = 4)
+    public async Task<IActionResult> RecomendadosPorCarrito([FromQuery] string? ids, [FromQuery] int top = 4)
     {
         var productosEnContexto = (ids ?? string.Empty)
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

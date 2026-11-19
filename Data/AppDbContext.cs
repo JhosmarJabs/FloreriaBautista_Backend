@@ -56,9 +56,17 @@ public class AppDbContext : DbContext
     public DbSet<ProductRecipe>          ProductRecipes           => Set<ProductRecipe>();
     public DbSet<SupplyOrder>            SupplyOrders             => Set<SupplyOrder>();
     public DbSet<SupplyOrderItem>        SupplyOrderItems         => Set<SupplyOrderItem>();
+    public DbSet<SupplySettings>         SupplySettings           => Set<SupplySettings>();
+    public DbSet<UncoveredDemand>        UncoveredDemands         => Set<UncoveredDemand>();
 
     // ── Notificaciones ──────────────────────────────────────────────
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<SolicitudEvento> SolicitudesEvento => Set<SolicitudEvento>();
+
+    // ── WhatsApp (Evolution API) ───────────────────────────────
+    public DbSet<WhatsAppSettings>  WhatsAppSettings   => Set<WhatsAppSettings>();
+    public DbSet<WhatsAppRecipient> WhatsAppRecipients => Set<WhatsAppRecipient>();
+    public DbSet<WhatsAppMessage>   WhatsAppMessages   => Set<WhatsAppMessage>();
 
     // ── Operación técnica ──────────────────────────────────────────
     public DbSet<BackupJob>         BackupJobs         => Set<BackupJob>();
@@ -66,10 +74,14 @@ public class AppDbContext : DbContext
     public DbSet<AuditLog>          AuditLogs          => Set<AuditLog>();
     public DbSet<SchedulerSettings> SchedulerSettings  => Set<SchedulerSettings>();
     public DbSet<SiteSettings>      SiteSettings       => Set<SiteSettings>();
+    public DbSet<ContenidoLegal>    ContenidoLegal     => Set<ContenidoLegal>();
 
     // ── Analítica web ──────────────────────────────────────────────
     public DbSet<PageVisit>      PageVisits      => Set<PageVisit>();
     public DbSet<PageVisitDaily> PageVisitsDaily => Set<PageVisitDaily>();
+
+    // ── Push notifications ────────────────────────────────────────────
+    public DbSet<PushTokenDevice> PushTokenDevices => Set<PushTokenDevice>();
 
     // ── Modelos predictivos ─────────────────────────────────────────
     public DbSet<AssociationRule>  AssociationRules  => Set<AssociationRule>();

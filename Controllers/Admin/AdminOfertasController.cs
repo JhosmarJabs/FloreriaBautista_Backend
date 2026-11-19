@@ -47,6 +47,9 @@ public class AdminOfertasController : ControllerBase
         if (producto == null)
             return BadRequest(ApiResponseDto<object>.Fail("Producto no encontrado."));
 
+        var errorPrecio = ValidarContraPrecioBase(request.PrecioOferta, producto);
+        if (errorPrecio != null) return BadRequest(ApiResponseDto<object>.Fail(errorPrecio));
+
         var oferta = new Oferta
         {
             Id            = Guid.NewGuid(),
@@ -74,19 +77,30 @@ public class AdminOfertasController : ControllerBase
         var error = await Validar(request, id);
         if (error != null) return BadRequest(ApiResponseDto<object>.Fail(error));
 
-        item.ProductoId    = request.ProductoId;
+        // Se resuelve el producto destino SIN modificar 'item' (FIX-008) y se valida el
+        // precio contra su precio normal (FIX-009, V-03) antes de asignar nada.
+        var cambiaProducto = item.ProductoId != request.ProductoId;
+        var productoDestino = item.Producto;
+        if (cambiaProducto)
+        {
+            productoDestino = await _context.Products.FindAsync(request.ProductoId);
+            if (productoDestino == null) return BadRequest(ApiResponseDto<object>.Fail("Producto no encontrado."));
+        }
+
+        var errorPrecio = ValidarContraPrecioBase(request.PrecioOferta, productoDestino!);
+        if (errorPrecio != null) return BadRequest(ApiResponseDto<object>.Fail(errorPrecio));
+
+        if (cambiaProducto)
+        {
+            item.ProductoId = request.ProductoId;
+            item.Producto   = productoDestino;
+        }
+
         item.PrecioOferta  = request.PrecioOferta;
         item.FechaInicio   = request.FechaInicio;
         item.FechaFin      = request.FechaFin;
         item.Activo        = request.Activo;
         item.ActualizadoEn = DateTime.UtcNow;
-
-        if (item.ProductoId != request.ProductoId)
-        {
-            var producto = await _context.Products.FindAsync(request.ProductoId);
-            if (producto == null) return BadRequest(ApiResponseDto<object>.Fail("Producto no encontrado."));
-            item.Producto = producto;
-        }
 
         await _context.SaveChangesAsync();
         return Ok(ApiResponseDto<OfertaDto>.Ok(MapToDto(item), "Oferta actualizada correctamente."));
@@ -121,6 +135,12 @@ public class AdminOfertasController : ControllerBase
 
         return null;
     }
+
+    // FIX-009 (V-03 = A): el precio de oferta debe ser menor al precio normal del producto.
+    internal static string? ValidarContraPrecioBase(decimal precioOferta, Product producto)
+        => precioOferta >= producto.PrecioBase
+            ? $"El precio de oferta debe ser menor al precio normal del producto ({producto.PrecioBase:N2})."
+            : null;
 
     private static OfertaDto MapToDto(Oferta o) => new()
     {

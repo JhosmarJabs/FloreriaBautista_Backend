@@ -44,6 +44,24 @@ public class OrderArchiverTests
         Assert.NotNull(guardado.ArchivadoEn);
     }
 
+    [Fact]
+    public async Task Pedido_Archivado_Sella_ActualizadoEn_Para_Llegar_Al_Delta()
+    {
+        // El delta de pedidos solo trae lo que tiene ActualizadoEn posterior a
+        // 'desde'; sin este sello el archivado nunca llegaría a las pantallas.
+        using var ctx = new PedidosTestContext(Utc23HoraLocal);
+        var pedido = ctx.AgregarPedido(Ayer, EstadosPedido.EnPreparacion);
+        var marcaAnterior = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+        pedido.ActualizadoEn = marcaAnterior;
+        await ctx.Db.SaveChangesAsync();
+
+        await ctx.CrearArchivador().ArchivarAtrasadosAsync();
+
+        var guardado = ctx.Recargar(pedido.Id);
+        Assert.True(guardado.ActualizadoEn > marcaAnterior);
+        Assert.Equal(guardado.ArchivadoEn, guardado.ActualizadoEn);
+    }
+
     [Theory]
     [InlineData(EstadosPedido.PendienteValidacion)]
     [InlineData(EstadosPedido.EnPreparacion)]

@@ -17,5 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FloreriaBautista.csproj" />
+    <!-- play_review: las guardas y el generador de la herramienta de siembra. -->
+    <ProjectReference Include="..\tools\PlayReviewSeed\PlayReviewSeed.csproj" />
   </ItemGroup>
 </Project>

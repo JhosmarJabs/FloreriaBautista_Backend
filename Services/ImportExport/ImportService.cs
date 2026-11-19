@@ -108,6 +108,7 @@ public class ImportService : IImportService
                     productoExistente.EsPersonalizable = esPersonalizable;
                     productoExistente.Estado = estado;
                     productoExistente.Visibilidad = visibilidad;
+                    productoExistente.ActualizadoEn = DateTime.UtcNow;
 
                     _context.RemoveRange(productoExistente.ProductCategories);
                     foreach (var catNom in categoriasNom)
@@ -264,6 +265,7 @@ public class ImportService : IImportService
                     itemExistente.SumaAlCosto = sumaAlCosto;
                     itemExistente.PrecioCosto = precioCosto;
                     itemExistente.EsFlorPrimaria = esFlorPrimaria;
+                    itemExistente.ActualizadoEn = DateTime.UtcNow;
                     if (!string.IsNullOrWhiteSpace(unidadMedida))
                         itemExistente.UnidadMedida = unidadMedida.ToUpper();
                     

@@ -9,3 +9,10 @@ google_token.json
 google_credentials.json
 .env
 .env.example
+.env.*
+!.env.example
+**/bin/
+**/obj/
+# Herramientas de consola (p. ej. tools/PlayReviewSeed): no van en la imagen
+tools/
+*.local.json

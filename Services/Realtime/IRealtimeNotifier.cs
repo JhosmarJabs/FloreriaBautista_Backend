@@ -7,8 +7,8 @@ public interface IRealtimeNotifier
     /// <summary>Notifica al grupo admin que hay una solicitud nueva PENDIENTE.</summary>
     Task SolicitudPendienteAsync(SolicitudVentaInstantaneaDto solicitud);
 
-    /// <summary>Notifica al responsable de turno que se escalaron solicitudes.</summary>
-    Task SolicitudEscaladaAsync(SolicitudVentaInstantaneaDto solicitud);
+    /// <summary>Notifica al responsable de turno (<paramref name="responsableId"/>) que se escaló una solicitud.</summary>
+    Task SolicitudEscaladaAsync(SolicitudVentaInstantaneaDto solicitud, Guid responsableId);
 
     /// <summary>Notifica al cliente dueño de la solicitud que se tomó una decision.</summary>
     Task SolicitudDecididaAsync(Guid solicitudId, SolicitudVentaInstantaneaDto solicitud);
@@ -18,6 +18,12 @@ public interface IRealtimeNotifier
 
     /// <summary>Notifica informativa al admin de un pedido anticipado (>=1 semana).</summary>
     Task PedidoAnticipadoInformativoAsync(PedidoNuevoNotificacion notificacion);
+
+    /// <summary>Avisa al admin que un empleado reportó un error en un registro suyo.</summary>
+    Task ReporteErrorCreadoAsync(Guid reporteId, string tipoRegistro, string nombreEmpleado);
+
+    /// <summary>Avisa al empleado que atendió el pedido que otra persona le cambió el estado.</summary>
+    Task PedidoCambioEstadoAsync(Guid orderId, Guid empleadoId, string nuevoEstado);
 }
 
 public class PedidoNuevoNotificacion
@@ -31,4 +37,6 @@ public class PedidoNuevoNotificacion
     public decimal Total         { get; set; }
     public string? Notas         { get; set; }
     public bool   EsInstantanea  { get; set; }
+    /// <summary>True si el pedido nace de una solicitud de venta instantanea ACEPTADA: solo ese caso abre el aviso de 60 s.</summary>
+    public bool   DesdeSolicitudAceptada { get; set; }
 }

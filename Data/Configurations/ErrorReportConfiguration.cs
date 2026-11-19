@@ -28,10 +28,14 @@ public class ErrorReportConfiguration : IEntityTypeConfiguration<ErrorReport>
                .HasForeignKey(r => r.ResueltoPorUsuarioId)
                .OnDelete(DeleteBehavior.SetNull);
 
+        builder.Property(r => r.ActualizadoEn).HasDefaultValueSql("NOW()");
+
         builder.HasIndex(r => new { r.UsuarioId, r.FechaHora });
         builder.HasIndex(r => new { r.TipoRegistro, r.RegistroId });
 
         // La bandeja del admin entra por aquí: los pendientes primero.
         builder.HasIndex(r => r.Estado);
+        builder.HasIndex(r => r.ActualizadoEn);
+        builder.HasIndex(r => new { r.UsuarioId, r.ActualizadoEn });
     }
 }

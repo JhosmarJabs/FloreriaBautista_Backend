@@ -66,6 +66,7 @@ public class ProductService : IProductService
                 Tipo = p.Tipo,
                 Estado = p.Estado,
                 ImagenUrl = p.ImagenUrl,
+                Activo = p.Activo,
                 Stock = null,
             })
             .ToListAsync();
@@ -130,6 +131,7 @@ public class ProductService : IProductService
                 Tipo = p.Tipo,
                 Estado = p.Estado,
                 ImagenUrl = p.ImagenUrl,
+                Activo = p.Activo,
                 Stock = null,
             })
             .ToListAsync();
@@ -174,8 +176,10 @@ public class ProductService : IProductService
             PrecioBase = p.PrecioBase,
             Tipo = p.Tipo,
             EsPersonalizable = p.EsPersonalizable,
+            Estado = p.Estado,
             Visibilidad = p.Visibilidad,
             ImagenUrl = p.ImagenUrl,
+            Activo = p.Activo,
             PermiteVentaInstantanea = p.PermiteVentaInstantanea,
             Categorias = (p.ProductCategories ?? []).Select(pc => pc.Category?.Nombre ?? "Categoría").ToList(),
             Catalogos = (p.ProductCatalogos ?? []).Select(pc => pc.Catalogo?.Nombre ?? "Catálogo").ToList(),
@@ -225,7 +229,10 @@ public class ProductService : IProductService
         var query = _context.Products.Where(p => p.Activo).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(busqueda))
-            query = query.Where(p => p.Nombre.Contains(busqueda));
+        {
+            var b = busqueda.Trim().ToLower();
+            query = query.Where(p => p.Nombre.ToLower().Contains(b));
+        }
 
         if (!string.IsNullOrWhiteSpace(estado))
             query = query.Where(p => p.Estado == estado.ToUpper());
@@ -237,13 +244,13 @@ public class ProductService : IProductService
 
         IOrderedQueryable<Product> ordered = sortBy?.ToLower() switch
         {
-            "nombre"      => query.OrderBy(p => p.Nombre),
-            "nombre_desc" => query.OrderByDescending(p => p.Nombre),
-            "precio"      => query.OrderBy(p => p.PrecioBase),
-            "precio_desc" => query.OrderByDescending(p => p.PrecioBase),
-            "tipo"        => query.OrderBy(p => p.Tipo).ThenBy(p => p.Nombre),
-            "tipo_desc"   => query.OrderByDescending(p => p.Tipo).ThenBy(p => p.Nombre),
-            _             => query.OrderByDescending(p => p.CreadoEn),
+            "nombre"      => query.OrderBy(p => p.Nombre).ThenBy(p => p.Id),
+            "nombre_desc" => query.OrderByDescending(p => p.Nombre).ThenBy(p => p.Id),
+            "precio"      => query.OrderBy(p => p.PrecioBase).ThenBy(p => p.Id),
+            "precio_desc" => query.OrderByDescending(p => p.PrecioBase).ThenBy(p => p.Id),
+            "tipo"        => query.OrderBy(p => p.Tipo).ThenBy(p => p.Nombre).ThenBy(p => p.Id),
+            "tipo_desc"   => query.OrderByDescending(p => p.Tipo).ThenBy(p => p.Nombre).ThenBy(p => p.Id),
+            _             => query.OrderByDescending(p => p.CreadoEn).ThenBy(p => p.Id),
         };
 
         var items = await ordered
@@ -257,6 +264,7 @@ public class ProductService : IProductService
                 Tipo = p.Tipo,
                 Estado = p.Estado,
                 ImagenUrl = p.ImagenUrl,
+                Activo = p.Activo,
                 Stock = null,
                 EsReal = p.EsReal,
             })
@@ -328,6 +336,18 @@ public class ProductService : IProductService
         };
     }
 
+    // Estados que admite ck_prod_estado en la BD.
+    private static readonly string[] EstadosValidos = ["ACTIVO", "INACTIVO", "BORRADOR"];
+
+    private static string NormalizarEstado(string estado)
+    {
+        var normalizado = (estado ?? string.Empty).Trim().ToUpper();
+        if (!EstadosValidos.Contains(normalizado))
+            throw new AppException(
+                $"Estado de producto no válido: '{estado}'. Valores permitidos: {string.Join(", ", EstadosValidos)}.");
+        return normalizado;
+    }
+
     // ── Crear ─────────────────────────────────────────────────────
     public async Task<ProductResponseDto> CrearAsync(CreateProductRequestDto request)
     {
@@ -339,7 +359,7 @@ public class ProductService : IProductService
             PrecioBase = request.PrecioBase,
             Tipo = request.Tipo.Trim().ToUpper(),
             EsPersonalizable = request.EsPersonalizable,
-            Estado = request.Estado.Trim().ToUpper(),
+            Estado = NormalizarEstado(request.Estado),
             Visibilidad = request.Visibilidad.Trim().ToUpper(),
             ImagenUrl = request.ImagenUrl,
             PermiteVentaInstantanea = request.PermiteVentaInstantanea,
@@ -350,7 +370,8 @@ public class ProductService : IProductService
 
         await AsignarCategorias(producto, request.Categorias);
         await AsignarCatalogos(producto, request.Catalogos);
-        await AsignarReceta(producto, request.Receta);
+        await AsignarReceta(producto,
+            await SimplificarRecetaVentaInstantaneaAsync(producto, request.Receta));
 
         _context.Products.Add(producto);
         await _context.SaveChangesAsync();
@@ -387,7 +408,7 @@ public class ProductService : IProductService
         if (request.EsPersonalizable.HasValue)
             producto.EsPersonalizable = request.EsPersonalizable.Value;
         if (!string.IsNullOrWhiteSpace(request.Estado))
-            producto.Estado = request.Estado.Trim().ToUpper();
+            producto.Estado = NormalizarEstado(request.Estado);
         if (!string.IsNullOrWhiteSpace(request.Visibilidad))
             producto.Visibilidad = request.Visibilidad.Trim().ToUpper();
         if (request.ImagenUrl != null)
@@ -465,26 +486,7 @@ public class ProductService : IProductService
         // 3. Actualizar Receta
         if (request.Receta != null)
         {
-            // Validacion de receta simplificada para venta instantanea:
-            // si el producto permite venta instantanea, filtrar a solo flor primaria.
-            if (producto.PermiteVentaInstantanea && request.Receta.Count > 0)
-            {
-                var invIds = request.Receta.Select(r => r.InventoryItemId).Distinct().ToList();
-                var invItems = await _context.InventoryItems
-                    .Where(i => invIds.Contains(i.Id))
-                    .ToDictionaryAsync(i => i.Id);
-
-                var soloFlorPrimaria = request.Receta
-                    .Where(r => invItems.TryGetValue(r.InventoryItemId, out var item) && item.EsFlorPrimaria)
-                    .ToList();
-
-                if (soloFlorPrimaria.Count == 0)
-                    throw new AppException(
-                        "Este producto permite venta instantanea y requiere al menos " +
-                        "un insumo con flor primaria en su receta.");
-
-                request.Receta = soloFlorPrimaria;
-            }
+            request.Receta = await SimplificarRecetaVentaInstantaneaAsync(producto, request.Receta);
 
             var idsDeseadas = request.Receta.Select(r => r.InventoryItemId).ToList();
             
@@ -504,7 +506,9 @@ public class ProductService : IProductService
                 }
                 else
                 {
-                    producto.ProductRecipes.Add(new ProductRecipe
+                    // DbSet.Add fuerza el estado Added: si se agrega a la coleccion con el Id
+                    // ya asignado (clave generada), EF la rastrea como Modified y emite un UPDATE.
+                    _context.ProductRecipes.Add(new ProductRecipe
                     {
                         Id = Guid.NewGuid(),
                         ProductId = producto.Id,
@@ -617,6 +621,31 @@ public class ProductService : IProductService
                     new ProductCatalogo { ProductId = producto.Id, CatalogoId = cat.Id }
                 );
         }
+    }
+
+    // Receta simplificada para venta instantanea: si el producto la permite,
+    // solo se guarda la fila de flor primaria y debe haber exactamente una.
+    private async Task<List<ProductRecipeRequestDto>> SimplificarRecetaVentaInstantaneaAsync(
+        Product producto, List<ProductRecipeRequestDto> receta)
+    {
+        if (!producto.PermiteVentaInstantanea || receta.Count == 0)
+            return receta;
+
+        var invIds = receta.Select(r => r.InventoryItemId).Distinct().ToList();
+        var invItems = await _context.InventoryItems
+            .Where(i => invIds.Contains(i.Id))
+            .ToDictionaryAsync(i => i.Id);
+
+        var soloFlorPrimaria = receta
+            .Where(r => invItems.TryGetValue(r.InventoryItemId, out var item) && item.EsFlorPrimaria)
+            .ToList();
+
+        if (soloFlorPrimaria.Count != 1)
+            throw new UnprocessableEntityException(
+                "Este producto permite venta instantanea y requiere exactamente " +
+                "un insumo con flor primaria en su receta.");
+
+        return soloFlorPrimaria;
     }
 
     private async Task AsignarReceta(Product producto, List<ProductRecipeRequestDto> receta)
