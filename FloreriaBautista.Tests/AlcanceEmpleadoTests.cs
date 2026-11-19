@@ -91,8 +91,10 @@ public class AlcanceEmpleadoTests
     // ── Ventas ────────────────────────────────────────────────────
 
     [Fact]
-    public async Task El_Empleado_Ve_Sus_Ventas_De_Hoy_Y_Las_Entregas_De_Hoy_De_Otros()
+    public async Task El_Empleado_Ve_Solo_Sus_Pedidos_Del_Dia()
     {
+        // Decisión del usuario D-1 (2026-10-23): el empleado ve únicamente lo suyo.
+        // Un pedido de otra persona que se entrega hoy lo atiende el administrador.
         using var ctx = new PedidosTestContext(Utc23HoraLocal);
         var ana  = ctx.AgregarEmpleado("Ana");
         var beto = ctx.AgregarEmpleado("Beto");
@@ -101,21 +103,152 @@ public class AlcanceEmpleadoTests
         var suya = ctx.AgregarPedido(Manana, EstadosPedido.EnPreparacion,
             atendidoPor: ana, fechaCreacion: Utc23HoraLocal);
 
-        // De Beto, capturada días atrás, pero se entrega hoy: Ana tiene que poder
-        // moverla aunque Beto no esté trabajando.
-        var entregaDeHoy = ctx.AgregarPedido(Hoy, EstadosPedido.EnRuta,
+        // De Beto, capturada días atrás, pero se entrega hoy: ya NO le toca a Ana.
+        ctx.AgregarPedido(Hoy, EstadosPedido.EnRuta,
             atendidoPor: beto, fechaCreacion: UtcAyer23HoraLocal);
 
-        // De Beto, capturada hoy, para entregar mañana: esto NO le toca a Ana.
+        // De Beto, capturada hoy, para entregar mañana: tampoco le toca a Ana.
         ctx.AgregarPedido(Manana, EstadosPedido.EnPreparacion,
             atendidoPor: beto, fechaCreacion: Utc23HoraLocal);
 
         var resultado = await ctx.CrearOrderService().ListarEmpleadoAsync(ana, null, page: 1, size: 20);
 
         var ids = resultado.Items.Select(i => i.Id).ToList();
-        Assert.Equal(2, ids.Count);
-        Assert.Contains(suya.Id, ids);
-        Assert.Contains(entregaDeHoy.Id, ids);
+        Assert.Equal(suya.Id, Assert.Single(ids));
+    }
+
+    [Fact]
+    public async Task Un_Pedido_Ajeno_Pendiente_De_Validar_Capturado_Dias_Antes_No_Aparece_En_Listado_Ni_Delta()
+    {
+        // Escenario BUG-011: una cuenta nueva veía pedidos PENDIENTE_VALIDACION de
+        // otra persona, capturados días antes, solo porque se entregan hoy.
+        using var ctx = new PedidosTestContext(Utc23HoraLocal);
+        var ana  = ctx.AgregarEmpleado("Ana");
+        var beto = ctx.AgregarEmpleado("Beto");
+
+        var ajeno = ctx.AgregarPedido(Hoy, EstadosPedido.PendienteValidacion,
+            atendidoPor: beto, fechaCreacion: UtcAyer23HoraLocal.AddDays(-2));
+
+        var servicio = ctx.CrearOrderService();
+        var listado  = await servicio.ListarEmpleadoAsync(ana, null, page: 1, size: 20);
+        var delta    = await servicio.ListarDeltaEmpleadoAsync(ana, DesdeAntiguo);
+
+        Assert.DoesNotContain(ajeno.Id, listado.Items.Select(i => i.Id));
+        Assert.DoesNotContain(ajeno.Id, delta.Items.Select(i => i.Id));
+    }
+
+    [Fact]
+    public async Task Un_Pedido_Sin_Dueno_Con_Entrega_Hoy_No_Es_Visible_Para_El_Empleado()
+    {
+        // Pedidos de la tienda en línea o por teléfono: nadie los atiende todavía;
+        // los toma el administrador.
+        using var ctx = new PedidosTestContext(Utc23HoraLocal);
+        var ana = ctx.AgregarEmpleado("Ana");
+
+        var sinDueno = ctx.AgregarPedido(Hoy, EstadosPedido.EnPreparacion,
+            atendidoPor: null, fechaCreacion: UtcAyer23HoraLocal);
+
+        var servicio = ctx.CrearOrderService();
+        var listado  = await servicio.ListarEmpleadoAsync(ana, null, page: 1, size: 20);
+
+        Assert.DoesNotContain(sinDueno.Id, listado.Items.Select(i => i.Id));
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            servicio.ObtenerParaEmpleadoAsync(ana, sinDueno.Id));
+    }
+
+    [Fact]
+    public async Task El_Empleado_Ve_Y_Avanza_Su_Pedido_Anticipado_Capturado_Antes_Con_Entrega_Hoy()
+    {
+        // La venta anticipada propia sigue funcionando el día de la entrega.
+        using var ctx = new PedidosTestContext(Utc23HoraLocal);
+        var ana = ctx.AgregarEmpleado("Ana");
+
+        var suya = ctx.AgregarPedido(Hoy, EstadosPedido.EnPreparacion,
+            atendidoPor: ana, fechaCreacion: UtcAyer23HoraLocal);
+
+        var servicio = ctx.CrearOrderService();
+        var listado  = await servicio.ListarEmpleadoAsync(ana, null, page: 1, size: 20);
+        Assert.Equal(suya.Id, Assert.Single(listado.Items).Id);
+
+        var detalle = await servicio.ObtenerParaEmpleadoAsync(ana, suya.Id);
+        Assert.Equal(suya.Id, detalle.Id);
+
+        var movido = await servicio.CambiarEstadoAsync(
+            suya.Id,
+            new UpdateOrderStatusRequestDto { NuevoEstado = EstadosPedido.EnRuta },
+            ["EMPLEADO"],
+            restringirAEmpleado: ana, usuarioActor: ana);
+
+        Assert.Equal(EstadosPedido.EnRuta, movido.EstadoPedido);
+    }
+
+    [Fact]
+    public async Task Un_Pedido_Propio_Capturado_Antes_Con_Entrega_Manana_No_Es_Visible()
+    {
+        using var ctx = new PedidosTestContext(Utc23HoraLocal);
+        var ana = ctx.AgregarEmpleado("Ana");
+
+        var propioDeAyer = ctx.AgregarPedido(Manana, EstadosPedido.EnPreparacion,
+            atendidoPor: ana, fechaCreacion: UtcAyer23HoraLocal);
+
+        var servicio = ctx.CrearOrderService();
+        var listado  = await servicio.ListarEmpleadoAsync(ana, null, page: 1, size: 20);
+
+        Assert.DoesNotContain(propioDeAyer.Id, listado.Items.Select(i => i.Id));
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            servicio.ObtenerParaEmpleadoAsync(ana, propioDeAyer.Id));
+    }
+
+    [Theory]
+    [InlineData(EstadosPedido.PendienteValidacion)]
+    [InlineData(EstadosPedido.EnPreparacion)]
+    [InlineData(EstadosPedido.EnRuta)]
+    [InlineData(EstadosPedido.Entregado)]
+    public async Task El_Detalle_De_Un_Pedido_Ajeno_Con_Entrega_Hoy_Responde_No_Encontrado(string estado)
+    {
+        using var ctx = new PedidosTestContext(Utc23HoraLocal);
+        var ana  = ctx.AgregarEmpleado("Ana");
+        var beto = ctx.AgregarEmpleado("Beto");
+
+        var ajeno = ctx.AgregarPedido(Hoy, estado,
+            atendidoPor: beto, fechaCreacion: UtcAyer23HoraLocal);
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            ctx.CrearOrderService().ObtenerParaEmpleadoAsync(ana, ajeno.Id));
+    }
+
+    [Fact]
+    public async Task El_Empleado_No_Mueve_Ni_Cobra_Un_Pedido_Ajeno_Con_Entrega_Hoy()
+    {
+        // Sustituye la expectativa antigua de que un abono ajeno del día respondía 200:
+        // ahora es 404 y no cambia el estado, los pagos ni el inventario.
+        using var ctx = new PedidosTestContext(Utc23HoraLocal);
+        var ana  = ctx.AgregarEmpleado("Ana");
+        var beto = ctx.AgregarEmpleado("Beto");
+
+        var ajeno = ctx.AgregarPedido(Hoy, EstadosPedido.EnPreparacion,
+            atendidoPor: beto, fechaCreacion: UtcAyer23HoraLocal);
+        ajeno.SaldoPendiente = 500m;
+        ctx.Db.SaveChanges();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            ctx.CrearOrderService().CambiarEstadoAsync(
+                ajeno.Id,
+                new UpdateOrderStatusRequestDto { NuevoEstado = EstadosPedido.EnRuta },
+                ["EMPLEADO"],
+                restringirAEmpleado: ana, usuarioActor: ana));
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            ctx.CrearOrderService().RegistrarPagoAsync(
+                ajeno.Id,
+                new RegisterPaymentRequestDto { Monto = 50m, Metodo = "EFECTIVO" },
+                restringirAEmpleado: ana, usuarioActor: ana));
+
+        var recargado = ctx.Recargar(ajeno.Id);
+        Assert.Equal(EstadosPedido.EnPreparacion, recargado.EstadoPedido);
+        Assert.Equal(500m, recargado.SaldoPendiente);
+        Assert.Empty(ctx.Db.Payments.ToList());
+        Assert.Empty(ctx.Db.InventoryMovements.ToList());
     }
 
     [Fact]
@@ -229,23 +362,22 @@ public class AlcanceEmpleadoTests
     }
 
     [Fact]
-    public async Task El_Delta_Del_Empleado_Incluye_Su_Venta_De_Hoy()
+    public async Task El_Delta_Del_Empleado_Incluye_Su_Venta_De_Hoy_Y_No_La_Entrega_De_Hoy_De_Otro()
     {
+        // Decisión del usuario D-1 (2026-10-23): el delta parte del mismo alcance
+        // que el listado, así que tampoco trae el pedido ajeno que se entrega hoy.
         using var ctx = new PedidosTestContext(Utc23HoraLocal);
         var ana  = ctx.AgregarEmpleado("Ana");
         var beto = ctx.AgregarEmpleado("Beto");
 
         var suya = ctx.AgregarPedido(Manana, EstadosPedido.EnPreparacion,
             atendidoPor: ana, fechaCreacion: Utc23HoraLocal);
-        var entregaDeHoy = ctx.AgregarPedido(Hoy, EstadosPedido.EnRuta,
+        ctx.AgregarPedido(Hoy, EstadosPedido.EnRuta,
             atendidoPor: beto, fechaCreacion: UtcAyer23HoraLocal);
 
         var delta = await ctx.CrearOrderService().ListarDeltaEmpleadoAsync(ana, DesdeAntiguo);
 
-        var ids = delta.Items.Select(i => i.Id).ToList();
-        Assert.Equal(2, ids.Count);
-        Assert.Contains(suya.Id, ids);
-        Assert.Contains(entregaDeHoy.Id, ids);
+        Assert.Equal(suya.Id, Assert.Single(delta.Items).Id);
     }
 
     [Fact]

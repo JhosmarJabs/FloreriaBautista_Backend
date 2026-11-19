@@ -46,6 +46,8 @@ public class AdminDescuentosController : ControllerBase
     {
         var error = Validar(request);
         if (error != null) return BadRequest(ApiResponseDto<object>.Fail(error));
+        error = await ValidarReferenciasAsync(request);
+        if (error != null) return BadRequest(ApiResponseDto<object>.Fail(error));
 
         var desc = new Descuento
         {
@@ -84,6 +86,8 @@ public class AdminDescuentosController : ControllerBase
 
         var error = Validar(request);
         if (error != null) return BadRequest(ApiResponseDto<object>.Fail(error));
+        error = await ValidarReferenciasAsync(request);
+        if (error != null) return BadRequest(ApiResponseDto<object>.Fail(error));
 
         item.Nombre            = request.Nombre.Trim();
         item.TipoRegla         = request.TipoRegla.ToUpper();
@@ -98,7 +102,12 @@ public class AdminDescuentosController : ControllerBase
         item.ActualizadoEn     = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
-        return Ok(ApiResponseDto<DescuentoDto>.Ok(MapToDto(item), "Descuento actualizado correctamente."));
+
+        var saved = await _context.Descuentos.AsNoTracking()
+            .Include(d => d.Categoria).Include(d => d.Catalogo)
+            .FirstAsync(d => d.Id == item.Id);
+
+        return Ok(ApiResponseDto<DescuentoDto>.Ok(MapToDto(saved), "Descuento actualizado correctamente."));
     }
 
     [HttpPost("{id:guid}/eliminar")]
@@ -110,6 +119,15 @@ public class AdminDescuentosController : ControllerBase
         _context.Descuentos.Remove(item);
         await _context.SaveChangesAsync();
         return Ok(ApiResponseDto<object>.Ok(null!, "Descuento eliminado correctamente."));
+    }
+
+    private async Task<string?> ValidarReferenciasAsync(SaveDescuentoRequestDto r)
+    {
+        if (r.CategoriaId.HasValue && !await _context.Categories.AnyAsync(c => c.Id == r.CategoriaId.Value))
+            return "La categoría seleccionada no existe.";
+        if (r.CatalogoId.HasValue && !await _context.Catalogos.AnyAsync(c => c.Id == r.CatalogoId.Value))
+            return "El catálogo seleccionado no existe.";
+        return null;
     }
 
     private static string? Validar(SaveDescuentoRequestDto r)

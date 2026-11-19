@@ -118,7 +118,9 @@ public class AdminInventoryController : ControllerBase
     // GET /api/admin/inventory/{id}/prediccion-surtido
     // Propuesta 1 (modelos predictivos): cantidad sugerida a surtir la próxima semana,
     // calculada por regresión lineal sobre el consumo semanal + módulo de temporada.
+    // Solo ADMIN (decisión #8, 2026-10-27; plan §10).
     [HttpGet("{id:guid}/prediccion-surtido")]
+    [Authorize(Roles = "ADMIN")]
     public async Task<IActionResult> ObtenerPrediccionSurtido(Guid id)
     {
         var prediccion = await _inventoryService.ObtenerPrediccionSurtidoAsync(id);
@@ -128,7 +130,9 @@ public class AdminInventoryController : ControllerBase
     // GET /api/admin/inventory/reabastecimiento
     // Propuesta 1 (modelos predictivos): lista de insumos a surtir, cada uno con el consumo
     // predicho por el modelo y la cantidad sugerida a comprar la próxima semana.
+    // Solo ADMIN (decisión #8, 2026-10-27; plan §10).
     [HttpGet("reabastecimiento")]
+    [Authorize(Roles = "ADMIN")]
     public async Task<IActionResult> ObtenerReabastecimiento([FromQuery] bool refresh = false)
     {
         var lista = await _inventoryService.ObtenerReabastecimientoAsync(refresh);
@@ -144,7 +148,10 @@ public class AdminInventoryController : ControllerBase
         return Ok(ApiResponseDto<object>.Ok(new { }, "Snapshot diario registrado con éxito."));
     }
 
+    // GET /api/admin/inventory/{id}/forecast
+    // Solo ADMIN (decisión #8, 2026-10-27; plan §10).
     [HttpGet("{id:guid}/forecast")]
+    [Authorize(Roles = "ADMIN")]
     public async Task<IActionResult> Forecast(Guid id)
     {
         var result = await _forecastService.GenerarRecomendacionAsync(id);

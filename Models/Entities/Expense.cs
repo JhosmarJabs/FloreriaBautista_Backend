@@ -43,6 +43,10 @@ public class Expense
     /// Null en los gastos registrados en línea antes de existir la cola offline.</summary>
     public DateTime? CapturadoEn   { get; set; }
 
+    /// <summary>Marca de sincronización incremental: se sella en cada escritura
+    /// para que los endpoints delta solo devuelvan lo modificado.</summary>
+    public DateTime ActualizadoEn { get; set; } = DateTime.UtcNow;
+
     public User     Usuario   { get; set; } = null!;
     public CashCut? CashCut   { get; set; }
 }

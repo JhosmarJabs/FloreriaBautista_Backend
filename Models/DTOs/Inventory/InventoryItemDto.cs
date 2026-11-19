@@ -105,8 +105,9 @@ public class InventoryMovementDto
     public string   NombreItem      { get; set; } = string.Empty;
     public string   Tipo            { get; set; } = string.Empty;
     public int      Cantidad        { get; set; }
-    public int      StockAntes      { get; set; }
-    public int      StockDespues    { get; set; }
+    // null = movimiento histórico anterior a la bitácora con existencias (sin dato).
+    public int?     StockAntes      { get; set; }
+    public int?     StockDespues    { get; set; }
     public string?  Motivo          { get; set; }
     public string   MotivoCategoria { get; set; } = "OTRO";
     /// Unidades que el sistema descontó automáticamente como merma de manipulación

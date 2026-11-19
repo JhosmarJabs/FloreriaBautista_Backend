@@ -34,6 +34,10 @@ public class ErrorReport
     public string?   ResolucionAccion     { get; set; }
     public string?   ResolucionNota       { get; set; }
 
+    /// <summary>Marca de sincronización incremental: se sella en cada escritura
+    /// para que los endpoints delta solo devuelvan lo modificado.</summary>
+    public DateTime ActualizadoEn { get; set; } = DateTime.UtcNow;
+
     public User  Usuario     { get; set; } = null!;
     public User? ResueltoPor { get; set; }
 }

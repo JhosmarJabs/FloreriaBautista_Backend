@@ -63,13 +63,14 @@ public class ErrorReportService : IErrorReportService
 
         var reporte = new ErrorReport
         {
-            Id           = Guid.NewGuid(),
-            UsuarioId    = usuarioId,
-            TipoRegistro = tipo,
-            RegistroId   = request.RegistroId,
-            Motivo       = request.Motivo.Trim(),
-            Estado       = "PENDIENTE",
-            FechaHora    = DateTime.UtcNow
+            Id            = Guid.NewGuid(),
+            UsuarioId     = usuarioId,
+            TipoRegistro  = tipo,
+            RegistroId    = request.RegistroId,
+            Motivo        = request.Motivo.Trim(),
+            Estado        = "PENDIENTE",
+            FechaHora     = DateTime.UtcNow,
+            ActualizadoEn = DateTime.UtcNow
         };
 
         _context.ErrorReports.Add(reporte);
@@ -158,6 +159,7 @@ public class ErrorReportService : IErrorReportService
         reporte.ResolucionNota       = request.Nota?.Trim();
         reporte.ResueltoPorUsuarioId = adminId;
         reporte.FechaResolucion      = DateTime.UtcNow;
+        reporte.ActualizadoEn        = DateTime.UtcNow;
 
         if (!request.Rechazar && AccionesQueAnulan.Contains(accion))
             await AnularRegistroAsync(reporte, adminId);
@@ -213,7 +215,8 @@ public class ErrorReportService : IErrorReportService
                 var gasto = await _context.Expenses.FindAsync(reporte.RegistroId);
                 if (gasto is not null)
                 {
-                    gasto.Estado = "ANULADO";
+                    gasto.Estado        = "ANULADO";
+                    gasto.ActualizadoEn = DateTime.UtcNow;
                     await _audit.RegistrarAsync("ANULAR", "Expense", gasto.Id.ToString(), adminId,
                         new { Motivo = reporte.Motivo, ReporteId = reporte.Id });
                 }

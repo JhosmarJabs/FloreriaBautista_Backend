@@ -13,6 +13,8 @@ public class AuthTokenConfiguration : IEntityTypeConfiguration<AuthToken>
         builder.Property(t => t.Token).HasMaxLength(512).IsRequired();
         builder.Property(t => t.Tipo).HasMaxLength(30).IsRequired();
         builder.HasIndex(t => t.Token).IsUnique();
+        builder.Property(t => t.MotivoCierre).HasMaxLength(30);
+        builder.HasIndex(t => t.FamiliaId);
         builder.Property(t => t.CreadoEn).HasDefaultValueSql("NOW()");
     }
 }

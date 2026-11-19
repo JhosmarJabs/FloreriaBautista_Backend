@@ -1,8 +1,10 @@
 using FloreriaBautista.Models.DTOs.Common;
 using FloreriaBautista.Models.DTOs.Inventory;
+using FloreriaBautista.Models.Exceptions;
 using FloreriaBautista.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
 
 namespace FloreriaBautista.Controllers.Admin;
 
@@ -13,7 +15,13 @@ namespace FloreriaBautista.Controllers.Admin;
 public class AdminAvailabilityController : ControllerBase
 {
     private readonly IAvailabilityService _availability;
-    public AdminAvailabilityController(IAvailabilityService availability) => _availability = availability;
+    private readonly IFechaHelper _fechas;
+
+    public AdminAvailabilityController(IAvailabilityService availability, IFechaHelper fechas)
+    {
+        _availability = availability;
+        _fechas       = fechas;
+    }
 
     [HttpGet("supply/{inventoryItemId:guid}")]
     public async Task<IActionResult> DisponibilidadInsumo(Guid inventoryItemId)
@@ -39,8 +47,12 @@ public class AdminAvailabilityController : ControllerBase
     [HttpPost("validate-advance")]
     public async Task<IActionResult> ValidarAnticipada([FromBody] ValidateAdvanceRequest request)
     {
+        var fechaEntrega = request.FechaEntrega!.Value;
+        if (fechaEntrega < _fechas.HoyLocal())
+            throw new AppException("La fecha de entrega no puede ser anterior a hoy.");
+
         var result = await _availability.ValidarVentaAnticipadaAsync(
-            request.ProductId, request.Cantidad, request.FechaEntrega);
+            request.ProductId, request.Cantidad, fechaEntrega);
         return Ok(ApiResponseDto<AdvanceSaleValidationResult>.Ok(result));
     }
 
@@ -55,12 +67,15 @@ public class AdminAvailabilityController : ControllerBase
 public class ValidateInstantRequest
 {
     public Guid ProductId { get; set; }
+    [Range(1, 999)]
     public int  Cantidad  { get; set; }
 }
 
 public class ValidateAdvanceRequest
 {
     public Guid    ProductId    { get; set; }
+    [Range(1, 999)]
     public int     Cantidad     { get; set; }
-    public DateOnly FechaEntrega { get; set; }
+    [Required]
+    public DateOnly? FechaEntrega { get; set; }
 }

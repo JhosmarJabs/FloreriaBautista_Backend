@@ -244,13 +244,13 @@ public class ProductService : IProductService
 
         IOrderedQueryable<Product> ordered = sortBy?.ToLower() switch
         {
-            "nombre"      => query.OrderBy(p => p.Nombre),
-            "nombre_desc" => query.OrderByDescending(p => p.Nombre),
-            "precio"      => query.OrderBy(p => p.PrecioBase),
-            "precio_desc" => query.OrderByDescending(p => p.PrecioBase),
-            "tipo"        => query.OrderBy(p => p.Tipo).ThenBy(p => p.Nombre),
-            "tipo_desc"   => query.OrderByDescending(p => p.Tipo).ThenBy(p => p.Nombre),
-            _             => query.OrderByDescending(p => p.CreadoEn),
+            "nombre"      => query.OrderBy(p => p.Nombre).ThenBy(p => p.Id),
+            "nombre_desc" => query.OrderByDescending(p => p.Nombre).ThenBy(p => p.Id),
+            "precio"      => query.OrderBy(p => p.PrecioBase).ThenBy(p => p.Id),
+            "precio_desc" => query.OrderByDescending(p => p.PrecioBase).ThenBy(p => p.Id),
+            "tipo"        => query.OrderBy(p => p.Tipo).ThenBy(p => p.Nombre).ThenBy(p => p.Id),
+            "tipo_desc"   => query.OrderByDescending(p => p.Tipo).ThenBy(p => p.Nombre).ThenBy(p => p.Id),
+            _             => query.OrderByDescending(p => p.CreadoEn).ThenBy(p => p.Id),
         };
 
         var items = await ordered
@@ -336,6 +336,18 @@ public class ProductService : IProductService
         };
     }
 
+    // Estados que admite ck_prod_estado en la BD.
+    private static readonly string[] EstadosValidos = ["ACTIVO", "INACTIVO", "BORRADOR"];
+
+    private static string NormalizarEstado(string estado)
+    {
+        var normalizado = (estado ?? string.Empty).Trim().ToUpper();
+        if (!EstadosValidos.Contains(normalizado))
+            throw new AppException(
+                $"Estado de producto no válido: '{estado}'. Valores permitidos: {string.Join(", ", EstadosValidos)}.");
+        return normalizado;
+    }
+
     // ── Crear ─────────────────────────────────────────────────────
     public async Task<ProductResponseDto> CrearAsync(CreateProductRequestDto request)
     {
@@ -347,7 +359,7 @@ public class ProductService : IProductService
             PrecioBase = request.PrecioBase,
             Tipo = request.Tipo.Trim().ToUpper(),
             EsPersonalizable = request.EsPersonalizable,
-            Estado = request.Estado.Trim().ToUpper(),
+            Estado = NormalizarEstado(request.Estado),
             Visibilidad = request.Visibilidad.Trim().ToUpper(),
             ImagenUrl = request.ImagenUrl,
             PermiteVentaInstantanea = request.PermiteVentaInstantanea,
@@ -396,7 +408,7 @@ public class ProductService : IProductService
         if (request.EsPersonalizable.HasValue)
             producto.EsPersonalizable = request.EsPersonalizable.Value;
         if (!string.IsNullOrWhiteSpace(request.Estado))
-            producto.Estado = request.Estado.Trim().ToUpper();
+            producto.Estado = NormalizarEstado(request.Estado);
         if (!string.IsNullOrWhiteSpace(request.Visibilidad))
             producto.Visibilidad = request.Visibilidad.Trim().ToUpper();
         if (request.ImagenUrl != null)

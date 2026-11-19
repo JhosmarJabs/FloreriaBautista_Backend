@@ -37,4 +37,6 @@ public class PedidoNuevoNotificacion
     public decimal Total         { get; set; }
     public string? Notas         { get; set; }
     public bool   EsInstantanea  { get; set; }
+    /// <summary>True si el pedido nace de una solicitud de venta instantanea ACEPTADA: solo ese caso abre el aviso de 60 s.</summary>
+    public bool   DesdeSolicitudAceptada { get; set; }
 }

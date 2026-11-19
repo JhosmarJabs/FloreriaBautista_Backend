@@ -56,8 +56,9 @@ public class CmsService
         settings.BannerCta       = request.BannerCta ?? settings.BannerCta;
         settings.HorariosJson    = JsonSerializer.Serialize(request.Horarios ?? []);
         settings.DestacadosJson  = JsonSerializer.Serialize(request.Destacados ?? []);
-        settings.Latitud         = request.Latitud ?? settings.Latitud;
-        settings.Longitud        = request.Longitud ?? settings.Longitud;
+        // Coordenadas: el formulario siempre las envía; null = sin coordenada.
+        settings.Latitud         = request.Latitud;
+        settings.Longitud        = request.Longitud;
         settings.AnuncioTexto    = request.AnuncioTexto ?? settings.AnuncioTexto;
         settings.AnuncioActivo   = request.AnuncioActivo;
         settings.ActualizadoEn   = DateTime.UtcNow;

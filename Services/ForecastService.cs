@@ -77,7 +77,11 @@ public class ForecastService : IForecastService
                 SemanaObjetivo  = semanaObjetivo,
                 NivelConfianza  = "SIN_DATOS",
                 StockActual     = item.StockActual,
-                Explicacion     = "Sin historial de ventas para este insumo. No se genera predicción."
+                // FIX-008: sin historial se sugiere mantener el stock mínimo configurado (plan CE7).
+                CantidadRecomendada = Math.Max(0, item.StockMinimo),
+                RangoInferior       = Math.Max(0, item.StockMinimo),
+                RangoSuperior       = Math.Max(0, item.StockMinimo),
+                Explicacion     = "Sin historial suficiente, se sugiere mantener el stock mínimo configurado."
             };
         }
 

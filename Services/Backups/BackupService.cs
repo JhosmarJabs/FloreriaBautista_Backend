@@ -111,7 +111,7 @@ public class BackupService : IBackupService
         {
             job.Estado       = "ERROR";
             job.CompletadoEn = DateTime.UtcNow;
-            job.MensajeError = ex.Message;
+            job.MensajeError = MensajeErrorSeguro.Redactar(ex.Message);
             await _context.SaveChangesAsync();
 
             _logger.LogError(ex, "Error al crear backup FULL (destino: {Destino})", destino);
@@ -173,7 +173,7 @@ public class BackupService : IBackupService
         {
             job.Estado       = "ERROR";
             job.CompletadoEn = DateTime.UtcNow;
-            job.MensajeError = ex.Message;
+            job.MensajeError = MensajeErrorSeguro.Redactar(ex.Message);
             await _context.SaveChangesAsync();
 
             _logger.LogError(ex, "Error al crear backup de tabla '{Tabla}'", nombreTabla);

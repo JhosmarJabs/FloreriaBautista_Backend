@@ -356,6 +356,9 @@ public class InventoryService : IInventoryService
             throw new AppException(
                 $"Stock insuficiente. Stock actual: {stockAntes}, se intenta retirar: {cantidad}");
 
+        // Existencias tras aplicar el movimiento principal (antes de la merma automática).
+        var stockTrasMovimiento = item.StockActual;
+
         // Conteo físico por debajo de lo esperado: hay merma de manipulación que el
         // factor actual no estaba capturando bien. Se recalibra con la fracción
         // perdida de esta observación (promedio móvil, ver RecalibrarEma) para que
@@ -375,7 +378,9 @@ public class InventoryService : IInventoryService
             Motivo          = request.Motivo,
             MotivoCategoria = categoria,
             UsuarioId       = usuarioId,
-            FechaHora       = DateTime.UtcNow
+            FechaHora       = DateTime.UtcNow,
+            StockAntes      = stockAntes,
+            StockDespues    = stockTrasMovimiento
         };
         _context.InventoryMovements.Add(movimiento);
 
@@ -394,6 +399,7 @@ public class InventoryService : IInventoryService
             {
                 item.StockActual -= mermaEstimada;
                 mermaGenerada = mermaEstimada;
+                var stockTrasMerma = item.StockActual;
 
                 _context.InventoryMovements.Add(new InventoryMovement
                 {
@@ -404,7 +410,9 @@ public class InventoryService : IInventoryService
                     Motivo          = $"Merma de manipulación estimada ({item.FactorMermaUso:P0})",
                     MotivoCategoria = "MANIPULACION",
                     UsuarioId       = usuarioId,
-                    FechaHora       = DateTime.UtcNow
+                    FechaHora       = DateTime.UtcNow,
+                    StockAntes      = stockTrasMovimiento,
+                    StockDespues    = stockTrasMerma
                 });
             }
         }
@@ -479,6 +487,8 @@ public class InventoryService : IInventoryService
                 Cantidad        = m.Cantidad,
                 Motivo          = m.Motivo,
                 MotivoCategoria = m.MotivoCategoria,
+                StockAntes      = m.StockAntes,
+                StockDespues    = m.StockDespues,
                 FechaHora       = m.FechaHora
             })
             .ToListAsync();
@@ -838,8 +848,9 @@ public class InventoryService : IInventoryService
             {
                 var f = await _forecastService.GenerarRecomendacionAsync(id);
 
-                var objetivo         = Math.Max(f.CantidadRecomendada, stockMin[id]);
-                var cantidadSugerida = Math.Max(0, objetivo - f.StockActual);
+                // CantidadRecomendada ya viene neta de stock: no se vuelve a restar.
+                var faltaParaMinimo  = Math.Max(0, stockMin[id] - f.StockActual);
+                var cantidadSugerida = Math.Max(f.CantidadRecomendada, faltaParaMinimo);
 
                 lista.Add(new SupplyReplenishmentItemDto
                 {
