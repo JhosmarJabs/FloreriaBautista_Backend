@@ -58,6 +58,7 @@ public class PlayReviewBordeTests
     private static (PlayReviewEdgeRouter Router, ForwarderFalso Fwd, Func<bool> SiguioNormal, Func<string?> CuerpoEnProd)
         Crear(OpcionesBordeRevision opciones)
     {
+        PlayReviewEdgeRouter.EsperaMaximaDespertar = TimeSpan.Zero;   // sin red en pruebas
         var fwd = new ForwarderFalso();
         var siguio = false;
         string? cuerpo = null;
@@ -472,5 +473,36 @@ public class PlayReviewBordeTests
         Assert.Null(saliente.Headers.Host);
         Assert.False(saliente.Headers.Contains("X-Forwarded-Host"));
         Assert.False(saliente.Headers.Contains("CDN-Loop"));
+    }
+
+    [Fact]
+    public async Task Si_REVIEW_esta_dormido_espera_a_que_despierte_antes_de_reenviar()
+    {
+        var respuestas = new Queue<System.Net.HttpStatusCode>(new[]
+        {
+            System.Net.HttpStatusCode.BadGateway, System.Net.HttpStatusCode.ServiceUnavailable,
+            System.Net.HttpStatusCode.Forbidden,   // la app ya contesta (sin firma): despierto
+        });
+        var pings = 0;
+        var handler = new ManejadorFalso(_ => { pings++; return new HttpResponseMessage(respuestas.Dequeue()); });
+        var fwd = new ForwarderFalso();
+        var router = new PlayReviewEdgeRouter(_ => Task.CompletedTask, OpcionesActivas(), fwd,
+            new ClienteBordeRevision(new HttpMessageInvoker(handler)), NullLogger<PlayReviewEdgeRouter>.Instance);
+        PlayReviewEdgeRouter.OlvidarDespierto();
+        PlayReviewEdgeRouter.EsperaMaximaDespertar = TimeSpan.FromSeconds(30);
+        try
+        {
+            var ctx = Peticion("POST", "/api/auth/login", json: "{\"correo\":\"a@playreview.invalid\",\"contrasena\":\"x\"}");
+            await router.InvokeAsync(ctx);
+        }
+        finally { PlayReviewEdgeRouter.EsperaMaximaDespertar = TimeSpan.Zero; }
+
+        Assert.Equal(3, pings);
+        Assert.Equal(1, fwd.Llamadas);
+    }
+
+    private sealed class ManejadorFalso(Func<HttpRequestMessage, HttpResponseMessage> f) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage r, CancellationToken ct) => Task.FromResult(f(r));
     }
 }
