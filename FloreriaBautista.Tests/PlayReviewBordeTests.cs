@@ -429,4 +429,27 @@ public class PlayReviewBordeTests
         Assert.Equal(ResultadoFirma.Valida,
             FirmaBorde.Validar(Secreto, firma, "GET", "/api/employee/orders", DateTimeOffset.UtcNow));
     }
+
+    [Fact]
+    public void Reenvio_quita_headers_de_Cloudflare_y_Render_para_evitar_508()
+    {
+        var req = new HttpRequestMessage(HttpMethod.Post, "https://review.example/api/auth/login");
+        req.Headers.TryAddWithoutValidation("CDN-Loop", "cloudflare");
+        req.Headers.TryAddWithoutValidation("CF-Ray", "abc");
+        req.Headers.TryAddWithoutValidation("CF-Connecting-IP", "1.2.3.4");
+        req.Headers.TryAddWithoutValidation("Rndr-Id", "x");
+        req.Headers.TryAddWithoutValidation("True-Client-IP", "1.2.3.4");
+        req.Headers.TryAddWithoutValidation("X-Forwarded-For", "1.2.3.4");
+        req.Headers.TryAddWithoutValidation("Authorization", "Bearer t");
+
+        TransformadorBorde.QuitarHeadersDeInfraestructura(req);
+
+        var claves = req.Headers.Select(h => h.Key).ToList();
+        Assert.DoesNotContain(claves, k => k.StartsWith("CF-", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain("CDN-Loop", claves);
+        Assert.DoesNotContain("Rndr-Id", claves);
+        Assert.DoesNotContain("True-Client-IP", claves);
+        Assert.Contains("X-Forwarded-For", claves);
+        Assert.Contains("Authorization", claves);
+    }
 }

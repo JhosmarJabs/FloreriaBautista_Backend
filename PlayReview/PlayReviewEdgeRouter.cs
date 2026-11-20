@@ -224,11 +224,27 @@ public sealed class TransformadorBorde : HttpTransformer
     {
         await base.TransformRequestAsync(httpContext, proxyRequest, destinationPrefix, cancellationToken);
 
+        // Headers que ponen Cloudflare/Render al entrar a PROD. Si viajan al servicio REVIEW
+        // (que también está detrás de Cloudflare/Render), el CDN lo toma como bucle y responde 508.
+        QuitarHeadersDeInfraestructura(proxyRequest);
+
         var ruta = (httpContext.Request.PathBase + httpContext.Request.Path).Value ?? "/";
         proxyRequest.Headers.Remove(PlayReviewEntorno.HeaderFirma);
         proxyRequest.Headers.TryAddWithoutValidation(
             PlayReviewEntorno.HeaderFirma,
             FirmaBorde.CrearHeader(_secreto, DateTimeOffset.UtcNow, proxyRequest.Method.Method, ruta));
+    }
+
+    private static readonly string[] PrefijosInfraestructura = ["cf-", "cdn-loop", "rndr-", "render-", "true-client-ip", "x-request-start"];
+
+    public static void QuitarHeadersDeInfraestructura(HttpRequestMessage proxyRequest)
+    {
+        var quitar = proxyRequest.Headers
+            .Select(h => h.Key)
+            .Where(k => PrefijosInfraestructura.Any(p => k.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        foreach (var k in quitar)
+            proxyRequest.Headers.Remove(k);
     }
 }
 
