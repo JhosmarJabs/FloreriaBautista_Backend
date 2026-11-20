@@ -227,6 +227,10 @@ public sealed class TransformadorBorde : HttpTransformer
         // Headers que ponen Cloudflare/Render al entrar a PROD. Si viajan al servicio REVIEW
         // (que también está detrás de Cloudflare/Render), el CDN lo toma como bucle y responde 508.
         QuitarHeadersDeInfraestructura(proxyRequest);
+        // Host del destino (REVIEW), nunca el de PROD: con el Host original Cloudflare/Render
+        // enrutan la petición de vuelta a PROD (508 Loop Detected / error 1000).
+        proxyRequest.Headers.Host = null;
+        proxyRequest.Headers.Remove("X-Forwarded-Host");
 
         var ruta = (httpContext.Request.PathBase + httpContext.Request.Path).Value ?? "/";
         proxyRequest.Headers.Remove(PlayReviewEntorno.HeaderFirma);

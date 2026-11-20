@@ -452,4 +452,25 @@ public class PlayReviewBordeTests
         Assert.Contains("X-Forwarded-For", claves);
         Assert.Contains("Authorization", claves);
     }
+
+    [Fact]
+    public async Task Al_Reenviar_Se_Usa_El_Host_Del_Destino_Y_No_El_De_Prod()
+    {
+        var (router, fwd, _, _) = Crear(OpcionesActivas());
+        var ctx = Peticion("POST", "/api/auth/login",
+            headers: new()
+            {
+                ["Host"] = "floreriabautista-backend.onrender.com",
+                ["X-Forwarded-Host"] = "floreriabautista-backend.onrender.com",
+                ["CDN-Loop"] = "cloudflare",
+            });
+        ctx.Request.Host = new HostString("floreriabautista-backend.onrender.com");
+
+        var saliente = new HttpRequestMessage(HttpMethod.Post, Upstream + "/api/auth/login");
+        await new TransformadorBorde(Secreto).TransformRequestAsync(ctx, saliente, Upstream, CancellationToken.None);
+
+        Assert.Null(saliente.Headers.Host);
+        Assert.False(saliente.Headers.Contains("X-Forwarded-Host"));
+        Assert.False(saliente.Headers.Contains("CDN-Loop"));
+    }
 }
