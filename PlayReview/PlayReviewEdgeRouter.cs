@@ -60,6 +60,49 @@ public class PlayReviewEdgeRouter
         _logger    = logger;
     }
 
+    /// <summary>
+    /// El servicio REVIEW (Render gratuito) se duerme sin tráfico; mientras despierta, su
+    /// proxy responde 502/503 al instante y el login del tester fallaba. Antes de reenviar,
+    /// si no se sabe que está despierto, se le hace ping (sin firma: cualquier respuesta de
+    /// la app, incluido 403, significa "despierto") hasta <see cref="EsperaMaximaDespertar"/>.
+    /// </summary>
+    public static TimeSpan EsperaMaximaDespertar { get; set; } = TimeSpan.FromSeconds(90);
+    private static readonly TimeSpan VigenciaDespierto = TimeSpan.FromMinutes(5);
+    private static DateTime _despiertoHasta = DateTime.MinValue;
+    public static void OlvidarDespierto() => _despiertoHasta = DateTime.MinValue;
+
+    private async Task AsegurarDespiertoAsync(CancellationToken ct)
+    {
+        if (EsperaMaximaDespertar <= TimeSpan.Zero || DateTime.UtcNow < _despiertoHasta) return;
+
+        var limite = DateTime.UtcNow + EsperaMaximaDespertar;
+        var intento = 0;
+        while (DateTime.UtcNow < limite && !ct.IsCancellationRequested)
+        {
+            intento++;
+            try
+            {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(TimeSpan.FromSeconds(30));
+                using var ping = new HttpRequestMessage(HttpMethod.Get, _opciones.UpstreamUrl.TrimEnd('/') + "/api/ping");
+                using var resp = await _cliente.SendAsync(ping, cts.Token);
+                if ((int)resp.StatusCode is not (502 or 503 or 504))
+                {
+                    _despiertoHasta = DateTime.UtcNow + VigenciaDespierto;
+                    if (intento > 1)
+                        _logger.LogInformation("[play_review-borde] REVIEW despertó tras {Intentos} intentos", intento);
+                    return;
+                }
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                // Aún arrancando: se reintenta.
+            }
+            try { await Task.Delay(TimeSpan.FromSeconds(3), ct); } catch (OperationCanceledException) { return; }
+        }
+        _logger.LogWarning("[play_review-borde] REVIEW no despertó en {Segundos} s", EsperaMaximaDespertar.TotalSeconds);
+    }
+
     public async Task InvokeAsync(HttpContext ctx)
     {
         if (!_opciones.Activo || !await EsPeticionDeRevisionAsync(ctx))
@@ -73,12 +116,16 @@ public class PlayReviewEdgeRouter
         ctx.Request.Headers.Remove(PlayReviewEntorno.HeaderFirma);
 
         var sw    = Stopwatch.StartNew();
+        await AsegurarDespiertoAsync(ctx.RequestAborted);
         var error = await _forwarder.SendAsync(
             ctx, _opciones.UpstreamUrl, _cliente, _config, new TransformadorBorde(_opciones.Secreto),
             ctx.RequestAborted);
         sw.Stop();
 
         // Sin query, sin cuerpo, sin IP: solo lo necesario para operar.
+        if (error == ForwarderError.None && ctx.Response.StatusCode is not (502 or 503 or 504))
+            _despiertoHasta = DateTime.UtcNow + VigenciaDespierto;
+
         if (error == ForwarderError.None)
         {
             _logger.LogInformation("[play_review-borde] {Method} {Path} reenviada → {Status} | {Ms} ms",
