@@ -24,6 +24,19 @@ public class AuthService : IAuthService
     }
 
     // ── Login ─────────────────────────────────────────────────────
+    // TEMPORAL-TESTERS: eliminar cuando Google Play apruebe la app para producción.
+    // Solo en la instancia de revisión (testers): tolera el espacio/salto de línea que se cuela
+    // al copiar la contraseña de WhatsApp y la mayúscula inicial que pone el teclado.
+    // En producción y desarrollo la comparación sigue siendo exacta.
+    public static bool ContrasenaValida(string contrasena, string hash, bool? modoRevision = null)
+    {
+        if (BCrypt.Net.BCrypt.Verify(contrasena, hash)) return true;
+        if (!(modoRevision ?? PlayReview.PlayReviewEntorno.EsModoRevision)) return false;
+        var limpia = contrasena.Trim();
+        return (limpia != contrasena && BCrypt.Net.BCrypt.Verify(limpia, hash))
+            || (limpia.ToLowerInvariant() != contrasena && BCrypt.Net.BCrypt.Verify(limpia.ToLowerInvariant(), hash));
+    }
+
     public async Task<LoginResponseDto> LoginAsync(LoginRequestDto request)
     {
         var user = await _context.Users
@@ -36,7 +49,7 @@ public class AuthService : IAuthService
         if (user.Estado != "ACTIVO")
             throw new UnauthorizedException("Tu cuenta está desactivada.");
 
-        if (!BCrypt.Net.BCrypt.Verify(request.Contrasena, user.PasswordHash))
+        if (!ContrasenaValida(request.Contrasena, user.PasswordHash))
             throw new UnauthorizedException("Correo o contraseña incorrectos.");
 
         var roles = user.UserRoles.Select(ur => ur.Role.Nombre).ToList();
